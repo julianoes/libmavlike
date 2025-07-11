@@ -41,7 +41,7 @@
 #include <variant>
 #include "MessageDefinition.h"
 #include "utils.h"
-#include "picosha2/picosha2.h"
+#include <picosha2.h>
 
 namespace mav {
 

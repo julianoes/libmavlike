@@ -41,6 +41,20 @@ cmake -Bbuild -S. \
     -DCMAKE_INSTALL_PREFIX="${install_dir}"
 cmake --build build --target install
 popd > /dev/null
+
+# Build and install picosha2
+if [ ! -d "picosha2" ]; then
+    git clone https://github.com/julianoes/PicoSHA2.git picosha2
+fi
+pushd picosha2 > /dev/null
+git fetch
+git checkout cmake-install-support
+cmake -Bbuild -S. \
+    -DPICOSHA2_TEST=OFF -DPICOSHA2_EXAMPLE=OFF \
+    -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
+    -DCMAKE_INSTALL_PREFIX="${install_dir}"
+cmake --build build --target install
+popd > /dev/null
 popd > /dev/null
 
 cmake -Bbuild -S. -DCMAKE_PREFIX_PATH="${install_dir}" -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"

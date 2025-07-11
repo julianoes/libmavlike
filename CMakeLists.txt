@@ -25,8 +25,9 @@ target_include_directories(
 target_compile_features(mav INTERFACE cxx_std_17)
 
 find_package(rapidxml REQUIRED)
+find_package(picosha2 REQUIRED)
 target_link_libraries(mav
-        INTERFACE rapidxml::rapidxml)
+        INTERFACE rapidxml::rapidxml picosha2::picosha2)
 
 install(TARGETS mav
         EXPORT ${PROJECT_NAME}_Targets
