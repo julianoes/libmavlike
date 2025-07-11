@@ -58,30 +58,35 @@ namespace mav {
 
         _MessageFieldIterator() = delete;
 
-        explicit _MessageFieldIterator(const Message &message, std::map<std::string, Field>::const_iterator map_iterator) :
+        explicit _MessageFieldIterator(const Message &message, std::map<std::string, Field>::const_iterator map_iterator) noexcept :
                 _message{message},
                 _map_iterator(map_iterator) {}
 
 
-        _MessageFieldIterator &operator++() {
+        _MessageFieldIterator &operator++() noexcept {
             _map_iterator++;
             return *this;
         }
 
-        const _MessageFieldIterator operator++(int) {
+        const _MessageFieldIterator operator++(int) noexcept {
             auto tmp = *this;
             ++*this;
             return tmp;
         }
 
-        bool operator==(_MessageFieldIterator const &other) {
+        bool operator==(_MessageFieldIterator const &other) noexcept {
             return this->_map_iterator == other._map_iterator;
         }
 
-        bool operator!=(_MessageFieldIterator const &other) { return !(*this == other); }
+        bool operator!=(_MessageFieldIterator const &other) noexcept { return !(*this == other); }
 
-        value_type operator*() const {
-            return {_map_iterator->first, _message.getAsNativeTypeInVariant(_map_iterator->first)};
+        value_type operator*() const noexcept {
+            auto variant_opt = _message.getAsNativeTypeInVariant(_map_iterator->first);
+            if (variant_opt) {
+                return {_map_iterator->first, variant_opt.value()};
+            }
+            // Return a default variant if the field couldn't be read
+            return {_map_iterator->first, NativeVariantType{}};
         }
     };
 
@@ -90,14 +95,14 @@ namespace mav {
     private:
         const Message& _message;
     public:
-        explicit FieldIterate(const Message &message) : _message(message) {
+        explicit FieldIterate(const Message &message) noexcept : _message(message) {
         }
 
-        [[nodiscard]] _MessageFieldIterator begin() const {
+        [[nodiscard]] _MessageFieldIterator begin() const noexcept {
             return _MessageFieldIterator(_message, _message.type().fieldDefinitions().begin());
         }
 
-        [[nodiscard]] _MessageFieldIterator end() const {
+        [[nodiscard]] _MessageFieldIterator end() const noexcept {
             return _MessageFieldIterator(_message, _message.type().fieldDefinitions().end());
         }
     };

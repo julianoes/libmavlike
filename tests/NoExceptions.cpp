@@ -37,6 +37,7 @@
 #define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
 #include "doctest.h"
 #include "mav/MessageSet.h"
+#include "mav/MessageFieldIterator.h"
 
 using namespace mav;
 
@@ -244,6 +245,33 @@ TEST_CASE("No-exceptions API functionality") {
         
         auto no_enum = message_set.getEnum("ANY_ENUM");
         CHECK_FALSE(no_enum.has_value());
+    }
+    
+    SUBCASE("MessageFieldIterator functionality") {
+        MessageSet message_set;
+        std::string simple_xml = R"(
+            <mavlink>
+                <messages>
+                    <message id="1" name="TEST_MESSAGE">
+                        <field type="uint8_t" name="field1"/>
+                        <field type="uint16_t" name="field2"/>
+                    </message>
+                </messages>
+            </mavlink>
+        )";
+        
+        message_set.addFromXMLString(simple_xml);
+        auto message = message_set.create("TEST_MESSAGE").value();
+        message.set("field1", uint8_t(10));
+        message.set("field2", uint16_t(20));
+        
+        // Test iterator over message fields
+        int field_count = 0;
+        for (const auto& field_pair : FieldIterate(message)) {
+            field_count++;
+            CHECK(field_pair.first.size() > 0); // Field name should not be empty
+        }
+        CHECK(field_count == 2); // Should have exactly 2 fields
     }
     
     // Note: We don't test completely invalid XML (like "invalid xml") here because 
