@@ -93,11 +93,11 @@ namespace mav {
                 _message_definition(&message_definition),
                 _crc_offset(crc_offset) {}
 
-        inline bool isFinalized() const {
+        inline bool isFinalized() const noexcept {
             return _crc_offset >= 0;
         }
 
-        inline void _unFinalize() {
+        inline void _unFinalize() noexcept {
             if (_crc_offset >= 0) {
                 std::fill(_backing_memory.begin() + _crc_offset,
                           _backing_memory.begin() + _backing_memory.size(), 0);
@@ -106,7 +106,7 @@ namespace mav {
         }
 
         template <typename T>
-        void _writeSingle(const Field &field, const T &v, int in_field_offset = 0) {
+        void _writeSingle(const Field &field, const T &v, int in_field_offset = 0) noexcept {
             // any write will potentially change the crc offset, so we invalidate it
             _unFinalize();
             // make sure that we only have simplistic base types here
@@ -155,14 +155,14 @@ namespace mav {
         }
 
         // Safe signature access methods that don't throw
-        std::optional<uint8_t> _getSignatureLinkId() const {
+        std::optional<uint8_t> _getSignatureLinkId() const noexcept {
             if (!isFinalized()) {
                 return std::nullopt;
             }
             return _backing_memory[MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE];
         }
 
-        std::optional<uint64_t> _getSignatureTimestamp() const {
+        std::optional<uint64_t> _getSignatureTimestamp() const noexcept {
             if (!isFinalized()) {
                 return std::nullopt;
             }
@@ -171,7 +171,7 @@ namespace mav {
             return deserialize<uint64_t>(timestamp_ptr, MessageDefinition::SIGNATURE_TIMESTAMP_SIZE) & 0xFFFFFFFFFFFF;
         }
 
-        std::optional<uint64_t> _getSignatureSignature() const {
+        std::optional<uint64_t> _getSignatureSignature() const noexcept {
             if (!isFinalized()) {
                 return std::nullopt;
             }
@@ -246,23 +246,23 @@ namespace mav {
             }
         };
 
-        [[nodiscard]] const MessageDefinition& type() const {
+        [[nodiscard]] const MessageDefinition& type() const noexcept {
             return *_message_definition;
         }
 
-        [[nodiscard]] int id() const {
+        [[nodiscard]] int id() const noexcept {
             return _message_definition->id();
         }
 
-        [[nodiscard]] const std::string& name() const {
+        [[nodiscard]] const std::string& name() const noexcept {
             return _message_definition->name();
         }
 
-        [[nodiscard]] const Header<const uint8_t*> header() const {
+        [[nodiscard]] const Header<const uint8_t*> header() const noexcept {
             return Header<const uint8_t*>(_backing_memory.data());
         }
 
-        [[nodiscard]] Header<uint8_t*> header() {
+        [[nodiscard]] Header<uint8_t*> header() noexcept {
             return Header<uint8_t*>(_backing_memory.data());
         }
 
@@ -284,7 +284,7 @@ namespace mav {
             return _source_partner;
         }
 
-        MessageResult setFromNativeTypeVariant(const std::string &field_key, const NativeVariantType &v) {
+        MessageResult setFromNativeTypeVariant(const std::string &field_key, const NativeVariantType &v) noexcept {
             MessageResult result = MessageResult::Success;
             std::visit([this, &field_key, &result](auto&& arg) {
                 result = this->set(field_key, arg);
@@ -292,7 +292,7 @@ namespace mav {
             return result;
         }
 
-        MessageResult set(std::initializer_list<_InitPairType> init) {
+        MessageResult set(std::initializer_list<_InitPairType> init) noexcept {
             for (const auto &pair : init) {
                 const auto &key = pair.first;
                 auto result = setFromNativeTypeVariant(key, pair.second);
@@ -304,7 +304,7 @@ namespace mav {
         }
 
         template <typename T>
-        MessageResult set(const std::string &field_key, const T &v, int array_index = 0) {
+        MessageResult set(const std::string &field_key, const T &v, int array_index = 0) noexcept {
             auto field_opt = _message_definition->getField(field_key);
             if (!field_opt) {
                 return MessageResult::FieldNotFound;
@@ -338,7 +338,7 @@ namespace mav {
         }
 
         template <typename T>
-        MessageResult setAsFloatPack(const std::string &field_key, const T &v, int array_index = 0) {
+        MessageResult setAsFloatPack(const std::string &field_key, const T &v, int array_index = 0) noexcept {
             if constexpr(is_string<T>::value) {
                 return MessageResult::TypeMismatch;
             } else if constexpr(is_iterable<T>::value) {
@@ -349,7 +349,7 @@ namespace mav {
         }
 
 
-        MessageResult setString(const std::string &field_key, const std::string &v) {
+        MessageResult setString(const std::string &field_key, const std::string &v) noexcept {
             auto field_opt = _message_definition->getField(field_key);
             if (!field_opt) {
                 return MessageResult::FieldNotFound;
@@ -377,7 +377,7 @@ namespace mav {
 
 
         template <typename T>
-        MessageResult get(const std::string &field_key, T& out_value, int array_index = 0) const {
+        MessageResult get(const std::string &field_key, T& out_value, int array_index = 0) const noexcept {
             if constexpr(is_string<T>::value) {
                 return getString(field_key, out_value);
             } else if constexpr(is_iterable<T>::value) {
@@ -416,7 +416,7 @@ namespace mav {
         }
 
         template <typename T>
-        MessageResult getAsFloatUnpack(const std::string &field_key, T& out_value, int array_index = 0) const {
+        MessageResult getAsFloatUnpack(const std::string &field_key, T& out_value, int array_index = 0) const noexcept {
             if constexpr(is_string<T>::value) {
                 (void)array_index; // unused
                 return MessageResult::TypeMismatch;
@@ -434,7 +434,7 @@ namespace mav {
             }
         }
 
-        MessageResult getString(const std::string &field_key, std::string& out_value) const {
+        MessageResult getString(const std::string &field_key, std::string& out_value) const noexcept {
             auto field_opt = _message_definition->getField(field_key);
             if (!field_opt) {
                 return MessageResult::FieldNotFound;
@@ -462,7 +462,7 @@ namespace mav {
             return _accessorType<Message>{field_name, *this, 0};
         }
 
-        std::optional<NativeVariantType> getAsNativeTypeInVariant(const std::string &field_key) const {
+        std::optional<NativeVariantType> getAsNativeTypeInVariant(const std::string &field_key) const noexcept {
             auto field_opt = _message_definition->getField(field_key);
             if (!field_opt) {
                 return std::nullopt;
@@ -620,7 +620,7 @@ namespace mav {
             return ss.str();
         }
 
-        std::optional<bool> validate(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key) const {
+        std::optional<bool> validate(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key) const noexcept {
             auto linkId_opt = _getSignatureLinkId();
             auto timestamp_opt = _getSignatureTimestamp();
             auto signature_opt = _getSignatureSignature();
@@ -632,14 +632,14 @@ namespace mav {
             return signature_opt.value() == _computeSignatureHash48(key, linkId_opt.value(), timestamp_opt.value());
         }
 
-        std::optional<uint32_t> finalize(uint8_t seq, const Identifier &sender) {
+        std::optional<uint32_t> finalize(uint8_t seq, const Identifier &sender) noexcept {
             static const std::array<uint8_t, MessageDefinition::KEY_SIZE> null_key = {};
             return finalize(seq, sender, null_key, 0, 0);
         }
 
         std::optional<uint32_t> finalize(uint8_t seq, const Identifier &sender,
                                         const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key,
-                                        const uint64_t& timestamp, const uint8_t linkId = 0) {
+                                        const uint64_t& timestamp, const uint8_t linkId = 0) noexcept {
             if (isFinalized()) {
                 _unFinalize();
             }
@@ -697,7 +697,7 @@ namespace mav {
             return MessageDefinition::HEADER_SIZE + payload_size + MessageDefinition::CHECKSUM_SIZE + signature_size;
         }
 
-        [[nodiscard]] const uint8_t* data() const {
+        [[nodiscard]] const uint8_t* data() const noexcept {
             return _backing_memory.data();
         };
     };
