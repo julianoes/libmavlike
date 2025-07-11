@@ -24,6 +24,10 @@ target_include_directories(
 
 target_compile_features(mav INTERFACE cxx_std_17)
 
+find_package(rapidxml REQUIRED)
+target_link_libraries(mav
+        INTERFACE rapidxml::rapidxml)
+
 install(TARGETS mav
         EXPORT ${PROJECT_NAME}_Targets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

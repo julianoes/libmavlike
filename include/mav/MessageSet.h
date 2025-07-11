@@ -38,12 +38,14 @@
 #include <memory>
 #include <optional>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 
 #include "MessageDefinition.h"
 #include "Message.h"
 
-#include "rapidxml/rapidxml.hpp"
-#include "rapidxml/rapidxml_utils.hpp"
+#include <rapidxml/rapidxml.hpp>
+#include <rapidxml/rapidxml_utils.hpp>
 
 #ifdef _LIBCPP_VERSION
 #if _LIBCPP_VERSION < 11000
@@ -67,16 +69,59 @@ namespace mav {
         {}
     };
 
+    class FileLoader {
+    private:
+        std::vector<char> m_data;
+
+    public:
+        explicit FileLoader(const char *filename) {
+            std::ifstream stream(filename, std::ios::binary);
+            if (!stream) {
+                throw std::runtime_error(std::string("cannot open file ") + filename);
+            }
+            stream.unsetf(std::ios::skipws);
+
+            stream.seekg(0, std::ios::end);
+            auto size = static_cast<std::size_t>(stream.tellg());
+            stream.seekg(0);
+
+            m_data.resize(size + 1);
+            stream.read(&m_data.front(), static_cast<std::streamsize>(size));
+            m_data[size] = 0;
+        }
+
+        explicit FileLoader(std::istream &stream) {
+            stream.unsetf(std::ios::skipws);
+            m_data.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+            if (stream.fail() || stream.bad()) {
+                throw std::runtime_error("error reading stream");
+            }
+            m_data.push_back(0);
+        }
+
+        char *data() {
+            return &m_data.front();
+        }
+
+        const char *data() const {
+            return &m_data.front();
+        }
+
+        std::size_t size() const {
+            return m_data.empty() ? 0 : m_data.size() - 1;
+        }
+    };
+
     class XMLParser {
     private:
 
-        std::shared_ptr<rapidxml::file<>> _source_file;
+        std::shared_ptr<FileLoader> _source_file;
         std::shared_ptr<rapidxml::xml_document<>> _document;
         std::string _root_xml_folder_path;
         bool _recursive_open_files;
 
         XMLParser(
-                std::shared_ptr<rapidxml::file<>> source_file,
+                std::shared_ptr<FileLoader> source_file,
                 std::shared_ptr<rapidxml::xml_document<>> document,
                 const std::string &root_xml_folder_path,
                 bool recursive_open_files) :
@@ -176,7 +221,7 @@ namespace mav {
     public:
 #ifndef _NO_STD_FILESYSTEM
         static XMLParser forFile(const std::string &file_name, bool recursive_open_includes) {
-            auto file = std::make_shared<rapidxml::file<>>(file_name.c_str());
+            auto file = std::make_shared<FileLoader>(file_name.c_str());
             auto doc = std::make_shared<rapidxml::xml_document<>>();
             doc->parse<0>(file->data());
 
@@ -187,7 +232,7 @@ namespace mav {
         static XMLParser forXMLString(const std::string &xml_string, bool recursive_open_includes) {
             // pass by value on purpose, rapidxml mutates the string on parse
             auto istream = std::istringstream(xml_string);
-            auto file = std::make_shared<rapidxml::file<>>(istream);
+            auto file = std::make_shared<FileLoader>(istream);
             auto doc = std::make_shared<rapidxml::xml_document<>>();
             try {
                 doc->parse<0>(file->data());
