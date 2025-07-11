@@ -151,10 +151,37 @@ namespace mav {
                 case FieldType::BaseType::FLOAT: return static_cast<T>(deserialize<float>(b_ptr, max_size));
                 case FieldType::BaseType::DOUBLE: return static_cast<T>(deserialize<double>(b_ptr, max_size));
             }
-            throw std::runtime_error("Unknown base type"); // should never happen
+            return T{}; // return default value instead of throwing
         }
 
-        uint64_t _computeSignatureHash48(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key) const {
+        // Safe signature access methods that don't throw
+        std::optional<uint8_t> _getSignatureLinkId() const {
+            if (!isFinalized()) {
+                return std::nullopt;
+            }
+            return _backing_memory[MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE];
+        }
+
+        std::optional<uint64_t> _getSignatureTimestamp() const {
+            if (!isFinalized()) {
+                return std::nullopt;
+            }
+            const uint8_t* timestamp_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + 
+                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE];
+            return deserialize<uint64_t>(timestamp_ptr, MessageDefinition::SIGNATURE_TIMESTAMP_SIZE) & 0xFFFFFFFFFFFF;
+        }
+
+        std::optional<uint64_t> _getSignatureSignature() const {
+            if (!isFinalized()) {
+                return std::nullopt;
+            }
+            const uint8_t* signature_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + 
+                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE];
+            return deserialize<uint64_t>(signature_ptr, MessageDefinition::SIGNATURE_SIGNATURE_SIZE) & 0xFFFFFFFFFFFF;
+        }
+
+        uint64_t _computeSignatureHash48(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key, 
+                                         uint8_t linkId, uint64_t timestamp) const {
             // signature = sha256_48(secret_key + header + payload + CRC + link-ID + timestamp)
             picosha2::hash256_one_by_one hasher;
             // secret_key
@@ -163,10 +190,8 @@ namespace mav {
             hasher.process(_backing_memory.begin(), _backing_memory.begin() + 
                     MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE);
             // link-ID
-            const uint8_t linkId = signature().linkId();
             hasher.process(&linkId, &linkId + MessageDefinition::SIGNATURE_LINK_ID_SIZE);
             // timestamp
-            const uint64_t timestamp = signature().timestamp();
             std::array<uint8_t, sizeof(timestamp)> timestampSerialized;
             serialize(timestamp, timestampSerialized.begin());
             hasher.process(timestampSerialized.begin(), timestampSerialized.begin() + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE);
@@ -197,18 +222,13 @@ namespace mav {
                 _field_name(field_name), _message(message), _array_index(array_index) {}
 
             template <typename T>
-            void operator=(const T& val) {
-                _message.template set<T>(_field_name, val, _array_index);
+            MessageResult operator=(const T& val) {
+                return _message.template set<T>(_field_name, val, _array_index);
             }
 
             template <typename T>
-            operator T() const {
-                return _message.template get<T>(_field_name, _array_index);
-            }
-
-            template <typename T>
-            [[nodiscard]] T as() const {
-                return _message.template get<T>(_field_name, _array_index);
+            MessageResult get(T& out_value) const {
+                return _message.template get<T>(_field_name, out_value, _array_index);
             }
 
             _accessorType operator[](int array_index) const {
@@ -216,13 +236,13 @@ namespace mav {
             }
 
             template <typename T>
-            void floatPack(T value) const {
-                _message.template setAsFloatPack<T>(_field_name, value, _array_index);
+            MessageResult floatPack(T value) const {
+                return _message.template setAsFloatPack<T>(_field_name, value, _array_index);
             }
 
             template <typename T>
-            T floatUnpack() const {
-                return _message.template getAsFloatUnpack<T>(_field_name, _array_index);
+            MessageResult floatUnpack(T& out_value) const {
+                return _message.template getAsFloatUnpack<T>(_field_name, out_value, _array_index);
             }
         };
 
@@ -246,16 +266,16 @@ namespace mav {
             return Header<uint8_t*>(_backing_memory.data());
         }
 
-        [[nodiscard]] const Signature<const uint8_t*> signature() const {
+        [[nodiscard]] std::optional<Signature<const uint8_t*>> signature() const {
             if (!isFinalized()) {
-                throw std::runtime_error("Unable to parse unfinalized message.");
+                return std::nullopt;
             }
             return Signature<const uint8_t*>(&_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE]);
         }
 
-        [[nodiscard]] Signature<uint8_t*> signature() {
+        [[nodiscard]] std::optional<Signature<uint8_t*>> signature() {
             if (!isFinalized()) {
-                throw std::runtime_error("Unable to parse unfinalized message.");
+                return std::nullopt;
             }
             return Signature<uint8_t*>(&_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE]);
         }
@@ -264,33 +284,36 @@ namespace mav {
             return _source_partner;
         }
 
-        Message& setFromNativeTypeVariant(const std::string &field_key, const NativeVariantType &v) {
-            std::visit([this, &field_key](auto&& arg) {
-                this->set(field_key, arg);
+        MessageResult setFromNativeTypeVariant(const std::string &field_key, const NativeVariantType &v) {
+            MessageResult result = MessageResult::Success;
+            std::visit([this, &field_key, &result](auto&& arg) {
+                result = this->set(field_key, arg);
             }, v);
-            return *this;
+            return result;
         }
 
-        Message& set(std::initializer_list<_InitPairType> init) {
+        MessageResult set(std::initializer_list<_InitPairType> init) {
             for (const auto &pair : init) {
                 const auto &key = pair.first;
-                setFromNativeTypeVariant(key, pair.second);
+                auto result = setFromNativeTypeVariant(key, pair.second);
+                if (result != MessageResult::Success) {
+                    return result;
+                }
             }
-            return *this;
-        }
-
-        Message& operator()(std::initializer_list<_InitPairType> init) {
-            this->set(std::move(init));
-            return *this;
+            return MessageResult::Success;
         }
 
         template <typename T>
-        Message& set(const std::string &field_key, const T &v, int array_index = 0) {
-            auto field = _message_definition->fieldForName(field_key);
+        MessageResult set(const std::string &field_key, const T &v, int array_index = 0) {
+            auto field_opt = _message_definition->getField(field_key);
+            if (!field_opt) {
+                return MessageResult::FieldNotFound;
+            }
+            auto field = field_opt.value();
 
             if constexpr(is_string<T>::value) {
                 (void)array_index; // unused
-                setFromString(field_key, v);
+                return setString(field_key, v);
             }
 
             else if constexpr(is_iterable<T>::value) {
@@ -298,8 +321,7 @@ namespace mav {
                 auto begin = std::begin(v);
                 auto end = std::end(v);
                 if ((end - begin) > field.type.size) {
-                    throw std::out_of_range(StringFormat() << "Data of length " << (end - begin) <<
-                        " does not fit in field with size " << field.type.size << StringFormat::end);
+                    return MessageResult::OutOfRange;
                 }
 
                 for (int i = 0; begin != end; (void)++begin, ++i) {
@@ -307,38 +329,38 @@ namespace mav {
                 }
             } else {
                 if (array_index < 0 || array_index >= field.type.size) {
-                    throw std::out_of_range(StringFormat() << array_index <<
-                        " is out of range for field " << field_key << StringFormat::end);
+                    return MessageResult::OutOfRange;
                 }
 
                 _writeSingle(field, v, array_index * field.type.baseSize());
             }
-            return *this;
+            return MessageResult::Success;
         }
 
         template <typename T>
-        Message& setAsFloatPack(const std::string &field_key, const T &v, int array_index = 0) {
+        MessageResult setAsFloatPack(const std::string &field_key, const T &v, int array_index = 0) {
             if constexpr(is_string<T>::value) {
-                throw std::runtime_error("Cannot do float unpack to a string");
+                return MessageResult::TypeMismatch;
             } else if constexpr(is_iterable<T>::value) {
-                throw std::runtime_error("Cannot do float unpack to an iterable");
+                return MessageResult::TypeMismatch;
             } else {
-                set<float>(field_key, floatPack<T>(v), array_index);
+                return set<float>(field_key, floatPack<T>(v), array_index);
             }
-            return *this;
         }
 
 
-        Message& setFromString(const std::string &field_key, const std::string &v) {
-            auto field = _message_definition->fieldForName(field_key);
+        MessageResult setString(const std::string &field_key, const std::string &v) {
+            auto field_opt = _message_definition->getField(field_key);
+            if (!field_opt) {
+                return MessageResult::FieldNotFound;
+            }
+            auto field = field_opt.value();
+            
             if (field.type.base_type != FieldType::BaseType::CHAR) {
-                throw std::invalid_argument(StringFormat() << "Field " << field_key <<
-                                                        " is not of type char" << StringFormat::end);
+                return MessageResult::TypeMismatch;
             }
             if (static_cast<int>(v.size()) > field.type.size) {
-                throw std::out_of_range(StringFormat() << "String of length " << v.size() <<
-                                                       " does not fit in field with size " << field.type.size <<
-                                                       StringFormat::end);
+                return MessageResult::OutOfRange;
             }
             int i = 0;
             for (char c : v) {
@@ -350,67 +372,85 @@ namespace mav {
                 _writeSingle(field, '\0', i);
                 i++;
             }
-            return *this;
+            return MessageResult::Success;
         }
 
 
         template <typename T>
-        T get(const std::string &field_key, int array_index = 0) const {
+        MessageResult get(const std::string &field_key, T& out_value, int array_index = 0) const {
             if constexpr(is_string<T>::value) {
-                return getAsString(field_key);
+                return getString(field_key, out_value);
             } else if constexpr(is_iterable<T>::value) {
-                auto field = _message_definition->fieldForName(field_key);
-                std::decay_t<T> ret_value;
+                auto field_opt = _message_definition->getField(field_key);
+                if (!field_opt) {
+                    return MessageResult::FieldNotFound;
+                }
+                auto field = field_opt.value();
 
                 // handle std::vector: Dynamically resize for convenience
                 if constexpr(std::is_same<T, std::vector<typename T::value_type>>::value) {
-                    ret_value.resize(field.type.size);
+                    out_value.resize(field.type.size);
                 }
 
-                if (static_cast<int>(ret_value.size()) < field.type.size) {
-                    throw std::out_of_range(StringFormat() << "Array of size " << field.type.size <<
-                        " can not fit in return type of size " << ret_value.size() << StringFormat::end);
+                if (static_cast<int>(out_value.size()) < field.type.size) {
+                    return MessageResult::OutOfRange;
                 }
 
                 for (int i=0; i<field.type.size; i++) {
-                    ret_value[i] = _readSingle<typename T::value_type>(field, i * field.type.baseSize());
+                    out_value[i] = _readSingle<typename T::value_type>(field, i * field.type.baseSize());
                 }
-                return ret_value;
+                return MessageResult::Success;
             } else {
-                auto field = _message_definition->fieldForName(field_key);
-                if (array_index < 0 || array_index >= field.type.size) {
-                    throw std::out_of_range(StringFormat() << "Index " << array_index <<
-                                                           " is out of range for field " << field_key << StringFormat::end);
+                auto field_opt = _message_definition->getField(field_key);
+                if (!field_opt) {
+                    return MessageResult::FieldNotFound;
                 }
-                return _readSingle<T>(field, array_index * field.type.baseSize());
+                auto field = field_opt.value();
+                
+                if (array_index < 0 || array_index >= field.type.size) {
+                    return MessageResult::OutOfRange;
+                }
+                out_value = _readSingle<T>(field, array_index * field.type.baseSize());
+                return MessageResult::Success;
             }
         }
 
         template <typename T>
-        [[nodiscard]] T getAsFloatUnpack(const std::string &field_key, int array_index = 0) const {
+        MessageResult getAsFloatUnpack(const std::string &field_key, T& out_value, int array_index = 0) const {
             if constexpr(is_string<T>::value) {
                 (void)array_index; // unused
-                throw std::runtime_error("Cannot do float unpack to a string");
+                return MessageResult::TypeMismatch;
             } else if constexpr(is_iterable<T>::value) {
                 (void)array_index; // unused
-                throw std::runtime_error("Cannot do float unpack to an iterable");
+                return MessageResult::TypeMismatch;
             } else {
-                return floatUnpack<T>(get<float>(field_key, array_index));
+                float float_value;
+                auto result = get<float>(field_key, float_value, array_index);
+                if (result != MessageResult::Success) {
+                    return result;
+                }
+                out_value = floatUnpack<T>(float_value);
+                return MessageResult::Success;
             }
         }
 
-        [[nodiscard]] std::string getAsString(const std::string &field_key) const {
-            auto field = _message_definition->fieldForName(field_key);
+        MessageResult getString(const std::string &field_key, std::string& out_value) const {
+            auto field_opt = _message_definition->getField(field_key);
+            if (!field_opt) {
+                return MessageResult::FieldNotFound;
+            }
+            auto field = field_opt.value();
+            
             if (field.type.base_type != FieldType::BaseType::CHAR) {
-                throw std::invalid_argument(StringFormat() << "Field " << field_key <<
-                                                        " is not of type char" << StringFormat::end);
+                return MessageResult::TypeMismatch;
             }
             int max_string_length = isFinalized() ?
                     std::min(field.type.size, _crc_offset - field.offset) : field.type.size;
             int real_string_length = strnlen(_backing_memory.data() + field.offset, max_string_length);
 
-            return std::string{reinterpret_cast<const char*>(_backing_memory.data() + field.offset),
+            out_value = std::string{reinterpret_cast<const char*>(_backing_memory.data() + field.offset),
                                static_cast<std::string::size_type>(real_string_length)};
+            return MessageResult::Success;
         }
 
 
@@ -422,38 +462,131 @@ namespace mav {
             return _accessorType<Message>{field_name, *this, 0};
         }
 
-        [[nodiscard]] NativeVariantType getAsNativeTypeInVariant(const std::string &field_key) const {
-            auto field = _message_definition->fieldForName(field_key);
+        std::optional<NativeVariantType> getAsNativeTypeInVariant(const std::string &field_key) const {
+            auto field_opt = _message_definition->getField(field_key);
+            if (!field_opt) {
+                return std::nullopt;
+            }
+            auto field = field_opt.value();
+            
             if (field.type.size <= 1) {
                 switch (field.type.base_type) {
-                    case FieldType::BaseType::CHAR: return get<char>(field_key);
-                    case FieldType::BaseType::UINT8: return get<uint8_t>(field_key);
-                    case FieldType::BaseType::UINT16: return get<uint16_t>(field_key);
-                    case FieldType::BaseType::UINT32: return get<uint32_t>(field_key);
-                    case FieldType::BaseType::UINT64: return get<uint64_t>(field_key);
-                    case FieldType::BaseType::INT8: return get<int8_t>(field_key);
-                    case FieldType::BaseType::INT16: return get<int16_t>(field_key);
-                    case FieldType::BaseType::INT32: return get<int32_t>(field_key);
-                    case FieldType::BaseType::INT64: return get<int64_t>(field_key);
-                    case FieldType::BaseType::FLOAT: return get<float>(field_key);
-                    case FieldType::BaseType::DOUBLE: return get<double>(field_key);
+                    case FieldType::BaseType::CHAR: {
+                        char value;
+                        if (get<char>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT8: {
+                        uint8_t value;
+                        if (get<uint8_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT16: {
+                        uint16_t value;
+                        if (get<uint16_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT32: {
+                        uint32_t value;
+                        if (get<uint32_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT64: {
+                        uint64_t value;
+                        if (get<uint64_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT8: {
+                        int8_t value;
+                        if (get<int8_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT16: {
+                        int16_t value;
+                        if (get<int16_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT32: {
+                        int32_t value;
+                        if (get<int32_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT64: {
+                        int64_t value;
+                        if (get<int64_t>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::FLOAT: {
+                        float value;
+                        if (get<float>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::DOUBLE: {
+                        double value;
+                        if (get<double>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
                 }
             } else {
                 switch (field.type.base_type) {
-                    case FieldType::BaseType::CHAR: return get<std::string>(field_key);
-                    case FieldType::BaseType::UINT8: return get<std::vector<uint8_t>>(field_key);
-                    case FieldType::BaseType::UINT16: return get<std::vector<uint16_t>>(field_key);
-                    case FieldType::BaseType::UINT32: return get<std::vector<uint32_t>>(field_key);
-                    case FieldType::BaseType::UINT64: return get<std::vector<uint64_t>>(field_key);
-                    case FieldType::BaseType::INT8: return get<std::vector<int8_t>>(field_key);
-                    case FieldType::BaseType::INT16: return get<std::vector<int16_t>>(field_key);
-                    case FieldType::BaseType::INT32: return get<std::vector<int32_t>>(field_key);
-                    case FieldType::BaseType::INT64: return get<std::vector<int64_t>>(field_key);
-                    case FieldType::BaseType::FLOAT: return get<std::vector<float>>(field_key);
-                    case FieldType::BaseType::DOUBLE: return get<std::vector<double>>(field_key);
+                    case FieldType::BaseType::CHAR: {
+                        std::string value;
+                        if (getString(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT8: {
+                        std::vector<uint8_t> value;
+                        if (get<std::vector<uint8_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT16: {
+                        std::vector<uint16_t> value;
+                        if (get<std::vector<uint16_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT32: {
+                        std::vector<uint32_t> value;
+                        if (get<std::vector<uint32_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::UINT64: {
+                        std::vector<uint64_t> value;
+                        if (get<std::vector<uint64_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT8: {
+                        std::vector<int8_t> value;
+                        if (get<std::vector<int8_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT16: {
+                        std::vector<int16_t> value;
+                        if (get<std::vector<int16_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT32: {
+                        std::vector<int32_t> value;
+                        if (get<std::vector<int32_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::INT64: {
+                        std::vector<int64_t> value;
+                        if (get<std::vector<int64_t>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::FLOAT: {
+                        std::vector<float> value;
+                        if (get<std::vector<float>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
+                    case FieldType::BaseType::DOUBLE: {
+                        std::vector<double> value;
+                        if (get<std::vector<double>>(field_key, value) == MessageResult::Success) return value;
+                        break;
+                    }
                 }
             }
-            throw std::runtime_error("Unknown base type"); // should never happen
+            return std::nullopt;
         }
 
         [[nodiscard]] std::string toString() const {
@@ -461,37 +594,50 @@ namespace mav {
             ss << "Message ID " << id() << " (" << name() << ") \n";
             for (const auto &field_key : _message_definition->fieldNames()) {
                 ss << "  " << field_key << ": ";
-                std::visit([&ss](auto&& arg) {
-                    if constexpr (is_string<decltype(arg)>::value) {
-                        ss << "\"" << arg << "\"";
-                    } else if constexpr (is_any<std::decay_t<decltype(arg)>, uint8_t, int8_t>::value) {
-                        // static cast to int to avoid printing as a char
-                        ss << static_cast<int>(arg);
-                    } else if constexpr (is_iterable<decltype(arg)>::value) {
-                        for (auto it = arg.begin(); it != arg.end(); it++) {
-                            if (it != arg.begin())
-                                ss << ", ";
-                            ss << *it;
+                auto variant_opt = getAsNativeTypeInVariant(field_key);
+                if (variant_opt) {
+                    std::visit([&ss](auto&& arg) {
+                        if constexpr (is_string<decltype(arg)>::value) {
+                            ss << "\"" << arg << "\"";
+                        } else if constexpr (is_any<std::decay_t<decltype(arg)>, uint8_t, int8_t>::value) {
+                            // static cast to int to avoid printing as a char
+                            ss << static_cast<int>(arg);
+                        } else if constexpr (is_iterable<decltype(arg)>::value) {
+                            for (auto it = arg.begin(); it != arg.end(); it++) {
+                                if (it != arg.begin())
+                                    ss << ", ";
+                                ss << *it;
+                            }
+                        } else {
+                            ss << arg;
                         }
-                    } else {
-                        ss << arg;
-                    }
-                }, getAsNativeTypeInVariant(field_key));
+                    }, variant_opt.value());
+                } else {
+                    ss << "<error reading field>";
+                }
                 ss << "\n";
             }
             return ss.str();
         }
 
-        [[nodiscard]] bool validate(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key) const {
-            return signature().signature() == _computeSignatureHash48(key);
+        std::optional<bool> validate(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key) const {
+            auto linkId_opt = _getSignatureLinkId();
+            auto timestamp_opt = _getSignatureTimestamp();
+            auto signature_opt = _getSignatureSignature();
+            
+            if (!linkId_opt || !timestamp_opt || !signature_opt) {
+                return std::nullopt;
+            }
+            
+            return signature_opt.value() == _computeSignatureHash48(key, linkId_opt.value(), timestamp_opt.value());
         }
 
-        [[nodiscard]] uint32_t finalize(uint8_t seq, const Identifier &sender) {
+        std::optional<uint32_t> finalize(uint8_t seq, const Identifier &sender) {
             static const std::array<uint8_t, MessageDefinition::KEY_SIZE> null_key = {};
             return finalize(seq, sender, null_key, 0, 0);
         }
 
-        [[nodiscard]] uint32_t finalize(uint8_t seq, const Identifier &sender,
+        std::optional<uint32_t> finalize(uint8_t seq, const Identifier &sender,
                                         const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key,
                                         const uint64_t& timestamp, const uint8_t linkId = 0) {
             if (isFinalized()) {
@@ -531,9 +677,20 @@ namespace mav {
 
             int signature_size = 0;
             if (sign) {
-                signature().linkId() = linkId;
-                signature().timestamp() = timestamp;
-                signature().signature() = _computeSignatureHash48(key);
+                // Set signature data directly without using throwing signature() accessors
+                _backing_memory[MessageDefinition::HEADER_SIZE + payload_size + MessageDefinition::CHECKSUM_SIZE] = linkId;
+                
+                // Set timestamp
+                uint8_t* timestamp_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + payload_size + 
+                    MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE];
+                serialize(timestamp & 0xFFFFFFFFFFFF, timestamp_ptr);
+                
+                // Compute and set signature
+                uint64_t computed_signature = _computeSignatureHash48(key, linkId, timestamp);
+                uint8_t* signature_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + payload_size + 
+                    MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE];
+                serialize(computed_signature & 0xFFFFFFFFFFFF, signature_ptr);
+                
                 signature_size = MessageDefinition::SIGNATURE_SIZE;
             }
 

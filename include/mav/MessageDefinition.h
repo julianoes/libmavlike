@@ -47,6 +47,32 @@ namespace mav {
     constexpr int ANY_ID = -1;
     constexpr int LIBMAV_DEFAULT_ID = 97;
 
+    // Error code enums for no-exceptions API
+    enum class MessageSetResult {
+        Success,
+        MessageNotFound,
+        EnumNotFound,
+        XmlParseError,
+        FileError
+    };
+
+    enum class MessageResult {
+        Success,
+        FieldNotFound,
+        TypeMismatch,
+        OutOfRange,
+        InvalidData,
+        NotFinalized
+    };
+
+    enum class ParseResult {
+        Success,
+        InvalidXml,
+        FileNotFound,
+        EnumParseError,
+        FieldTypeError
+    };
+
 
     struct ConnectionPartner {
         uint32_t _address;
@@ -394,11 +420,10 @@ namespace mav {
             return _crc_extra;
         }
 
-        [[nodiscard]] const Field& fieldForName(const std::string &field_key) const {
+        [[nodiscard]] std::optional<Field> getField(const std::string &field_key) const {
             auto it = _fields.find(field_key);
             if (it == _fields.end()) {
-                throw std::out_of_range(StringFormat() << "Field \"" << field_key << "\" does not exist in message "
-                                                       << _name << "." << StringFormat::end);
+                return std::nullopt;
             }
             return it->second;
         }
