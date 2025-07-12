@@ -32,8 +32,8 @@
  * 
  ****************************************************************************/
 
-#ifndef LIBMAVLINK_MESSAGEFIELDITERATOR_H
-#define LIBMAVLINK_MESSAGEFIELDITERATOR_H
+#ifndef MAV_MESSAGEFIELDITERATOR_H
+#define MAV_MESSAGEFIELDITERATOR_H
 
 #include <iterator>
 #include <tuple>
@@ -110,4 +110,4 @@ namespace mav {
 }
 
 
-#endif //LIBMAVLINK_MESSAGEFIELDITERATOR_H
+#endif //MAV_MESSAGEFIELDITERATOR_H

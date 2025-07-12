@@ -1,5 +1,5 @@
-#ifndef LIBMAVLINK_MINIMAL_H
-#define LIBMAVLINK_MINIMAL_H
+#ifndef MAV_MINIMAL_H
+#define MAV_MINIMAL_H
 
 #include <string>
 
@@ -750,4 +750,4 @@ const char minimal_xml[] = R""""(
 
 )"""";
 
-#endif // LIBMAVLINK_MINIMAL_H
+#endif // MAV_MINIMAL_H

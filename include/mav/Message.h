@@ -438,6 +438,6 @@ namespace mav {
         };
     };
 
-} // namespace libmavlink`
+} // namespace mav
 
 #endif //MAV_DYNAMICMESSAGE_H
