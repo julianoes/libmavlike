@@ -49,14 +49,7 @@
 // Use tinyxml2 for robust XML parsing with proper error handling
 #include <tinyxml2.h>
 
-#ifdef _LIBCPP_VERSION
-#if _LIBCPP_VERSION < 11000
-#define _NO_STD_FILESYSTEM
-#endif
-#endif
-#ifndef _NO_STD_FILESYSTEM
 #include <filesystem>
-#endif
 
 namespace mav {
 
@@ -93,9 +86,7 @@ namespace mav {
         static std::optional<FieldType> _parseFieldType(const std::string &field_type_string);
 
     public:
-#ifndef _NO_STD_FILESYSTEM
         static std::optional<XMLParser> forFile(const std::string &file_name, bool recursive_open_includes);
-#endif // _NO_STD_FILESYSTEM
         static std::optional<XMLParser> forXMLString(const std::string &xml_string, bool recursive_open_includes);
         ParseResult parse(std::map<std::string, uint64_t> &out_enum,
                    std::map<std::string, std::shared_ptr<const MessageDefinition>> &out_messages,
@@ -111,9 +102,7 @@ namespace mav {
     public:
         MessageSet() = default;
 
-#ifndef _NO_STD_FILESYSTEM        
         MessageSetResult addFromXML(const std::string &file_path, bool recursive_open_includes = true);
-#endif // _NO_STD_FILESYSTEM
 
         MessageSetResult addFromXMLString(const std::string &xml_string, bool recursive_open_includes = false);
 

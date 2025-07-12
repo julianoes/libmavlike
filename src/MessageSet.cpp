@@ -198,7 +198,6 @@ namespace mav {
         return std::nullopt;
     }
 
-#ifndef _NO_STD_FILESYSTEM
     std::optional<XMLParser> XMLParser::forFile(const std::string &file_name, bool recursive_open_includes) {
         auto file = std::make_shared<FileLoader>(file_name.c_str());
         if (!file->isValid()) {
@@ -216,7 +215,6 @@ namespace mav {
 
         return XMLParser{file, std::move(doc), std::filesystem::path{file_name}.parent_path().string(), recursive_open_includes};
     }
-#endif // _NO_STD_FILESYSTEM
 
     std::optional<XMLParser> XMLParser::forXMLString(const std::string &xml_string, bool recursive_open_includes) {
         // Create a FileLoader from the XML string
@@ -246,7 +244,6 @@ namespace mav {
         if (!root_node) {
             return ParseResult::InvalidXml;
         }
-#ifndef _NO_STD_FILESYSTEM
         if (_recursive_open_files) {
             for (auto include_element = root_node->FirstChildElement("include");
                  include_element != nullptr;
@@ -268,7 +265,6 @@ namespace mav {
                 }
             }
         }
-#endif // _NO_STD_FILESYSTEM
 
         auto enums_node = root_node->FirstChildElement("enums");
         if (enums_node) {
@@ -359,7 +355,6 @@ namespace mav {
     }
 
     // MessageSet implementation
-#ifndef _NO_STD_FILESYSTEM        
     MessageSetResult MessageSet::addFromXML(const std::string &file_path, bool recursive_open_includes) {
         auto parser_opt = XMLParser::forFile(file_path, recursive_open_includes);
         if (!parser_opt) {
@@ -371,7 +366,6 @@ namespace mav {
         }
         return MessageSetResult::Success;
     }
-#endif // _NO_STD_FILESYSTEM
 
     MessageSetResult MessageSet::addFromXMLString(const std::string &xml_string, bool recursive_open_includes) {
         auto parser_opt = XMLParser::forXMLString(xml_string, recursive_open_includes);
