@@ -46,30 +46,8 @@
 #include "MessageDefinition.h"
 #include "Message.h"
 
-// Enable no-exceptions mode for rapidxml
-#define RAPIDXML_NO_EXCEPTIONS
-
-// Disable assertions in rapidxml to prevent crashes on malformed XML
-#ifndef NDEBUG
-#define NDEBUG
-#define LIBMAV_DEFINED_NDEBUG
-#endif
-
-// Forward declare the error handler before redefining the macro
-namespace rapidxml {
-    void parse_error_handler(const char *what, void *where);
-}
-
-// Override rapidxml's parse error macro to prevent assertions
-#define RAPIDXML_PARSE_ERROR(what, where) { rapidxml::parse_error_handler(what, where); }
-
-#include <rapidxml/rapidxml.hpp>
-
-// Restore debug mode if we defined NDEBUG ourselves
-#ifdef LIBMAV_DEFINED_NDEBUG
-#undef NDEBUG
-#undef LIBMAV_DEFINED_NDEBUG
-#endif
+// Use tinyxml2 for robust XML parsing with proper error handling
+#include <tinyxml2.h>
 
 #ifdef _LIBCPP_VERSION
 #if _LIBCPP_VERSION < 11000
@@ -100,12 +78,12 @@ namespace mav {
     class XMLParser {
     private:
         std::shared_ptr<FileLoader> _source_file;
-        std::shared_ptr<rapidxml::xml_document<>> _document;
+        std::unique_ptr<tinyxml2::XMLDocument> _document;
         std::string _root_xml_folder_path;
         bool _recursive_open_files;
 
         XMLParser(std::shared_ptr<FileLoader> source_file,
-                 std::shared_ptr<rapidxml::xml_document<>> document,
+                 std::unique_ptr<tinyxml2::XMLDocument> document,
                  const std::string &root_xml_folder_path,
                  bool recursive_open_files);
 

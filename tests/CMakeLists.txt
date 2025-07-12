@@ -1,12 +1,5 @@
 add_executable(tests
-        test_main.cpp
-        MessageSet.cpp
-        Message.cpp
-        MessageDefinition.cpp
-        Network.cpp
-        MessageFieldIterator.cpp
-        UDP.cpp
-        TCP.cpp)
+        test_main.cpp)
 
 # Add separate no-exceptions test executable
 add_executable(test_no_exceptions

@@ -36,19 +36,7 @@
 #include <cmath>
 #include <climits>
 
-// Thread-local storage for parse error status
-thread_local bool rapidxml_parse_error = false;
-
-// Required error handler for RAPIDXML_NO_EXCEPTIONS mode
-namespace rapidxml {
-    void parse_error_handler(const char *what, void *where) {
-        // In no-exceptions mode, we can't throw. Instead of aborting,
-        // we set a thread-local flag and let the parser return.
-        (void)what;   // Suppress unused parameter warning
-        (void)where;  // Suppress unused parameter warning
-        rapidxml_parse_error = true;
-    }
-}
+// tinyxml2 provides robust error handling without requiring error handlers
 
 namespace mav {
 
@@ -98,7 +86,7 @@ namespace mav {
 
     // XMLParser implementation
     XMLParser::XMLParser(std::shared_ptr<FileLoader> source_file,
-                        std::shared_ptr<rapidxml::xml_document<>> document,
+                        std::unique_ptr<tinyxml2::XMLDocument> document,
                         const std::string &root_xml_folder_path,
                         bool recursive_open_files) :
             _source_file(std::move(source_file)),
@@ -216,57 +204,59 @@ namespace mav {
         if (!file->isValid()) {
             return std::nullopt;
         }
-        auto doc = std::make_shared<rapidxml::xml_document<>>();
         
-        // Clear any previous parse error
-        rapidxml_parse_error = false;
-        doc->parse<0>(file->data());
+        auto doc = std::make_unique<tinyxml2::XMLDocument>();
         
-        // Check if parsing failed
-        if (rapidxml_parse_error) {
+        // Parse file content using tinyxml2's robust error handling
+        tinyxml2::XMLError error = doc->Parse(file->data(), file->size());
+        if (error != tinyxml2::XML_SUCCESS) {
+            // tinyxml2 handled the malformed XML gracefully - return error
             return std::nullopt;
         }
 
-        return XMLParser{file, doc, std::filesystem::path{file_name}.parent_path().string(), recursive_open_includes};
+        return XMLParser{file, std::move(doc), std::filesystem::path{file_name}.parent_path().string(), recursive_open_includes};
     }
 #endif // _NO_STD_FILESYSTEM
 
     std::optional<XMLParser> XMLParser::forXMLString(const std::string &xml_string, bool recursive_open_includes) {
-        // pass by value on purpose, rapidxml mutates the string on parse
+        // Create a FileLoader from the XML string
         auto istream = std::istringstream(xml_string);
         auto file = std::make_shared<FileLoader>(istream);
         if (!file->isValid()) {
             return std::nullopt;
         }
-        auto doc = std::make_shared<rapidxml::xml_document<>>();
         
-        // Clear any previous parse error
-        rapidxml_parse_error = false;
-        doc->parse<0>(file->data());
+        auto doc = std::make_unique<tinyxml2::XMLDocument>();
         
-        // Check if parsing failed
-        if (rapidxml_parse_error) {
+        // Parse XML string using tinyxml2's robust error handling
+        tinyxml2::XMLError error = doc->Parse(file->data(), file->size());
+        if (error != tinyxml2::XML_SUCCESS) {
+            // tinyxml2 handled the malformed XML gracefully - return error
             return std::nullopt;
         }
         
-        return XMLParser{file, doc, "", recursive_open_includes};
+        return XMLParser{file, std::move(doc), "", recursive_open_includes};
     }
 
     ParseResult XMLParser::parse(std::map<std::string, uint64_t> &out_enum,
                std::map<std::string, std::shared_ptr<const MessageDefinition>> &out_messages,
                std::map<int, std::shared_ptr<const MessageDefinition>> &out_message_ids) const {
 
-        auto root_node = _document->first_node("mavlink");
+        auto root_node = _document->FirstChildElement("mavlink");
         if (!root_node) {
             return ParseResult::InvalidXml;
         }
 #ifndef _NO_STD_FILESYSTEM
         if (_recursive_open_files) {
-            for (auto include_element = root_node->first_node("include");
+            for (auto include_element = root_node->FirstChildElement("include");
                  include_element != nullptr;
-                 include_element = include_element->next_sibling("include")) {
+                 include_element = include_element->NextSiblingElement("include")) {
 
-                const std::string include_name = include_element->value();
+                const char* include_text = include_element->GetText();
+                if (!include_text) {
+                    return ParseResult::InvalidXml;
+                }
+                const std::string include_name = include_text;
                 auto sub_parser_opt = XMLParser::forFile(
                         (std::filesystem::path{_root_xml_folder_path} / include_name).string(), true);
                 if (!sub_parser_opt) {
@@ -280,18 +270,21 @@ namespace mav {
         }
 #endif // _NO_STD_FILESYSTEM
 
-        auto enums_node = root_node->first_node("enums");
+        auto enums_node = root_node->FirstChildElement("enums");
         if (enums_node) {
-            for (auto enum_node = enums_node->first_node();
+            for (auto enum_node = enums_node->FirstChildElement();
                 enum_node != nullptr;
-                enum_node = enum_node->next_sibling()) {
+                enum_node = enum_node->NextSiblingElement()) {
 
-                for (auto entry = enum_node->first_node();
+                for (auto entry = enum_node->FirstChildElement();
                     entry != nullptr;
-                    entry = entry->next_sibling()) {
-                    if (std::string_view("entry") == entry->name()) {
-                        auto entry_name = entry->first_attribute("name")->value();
-                        auto value_str = entry->first_attribute("value")->value();
+                    entry = entry->NextSiblingElement()) {
+                    if (std::string_view("entry") == entry->Name()) {
+                        const char* entry_name = entry->Attribute("name");
+                        const char* value_str = entry->Attribute("value");
+                        if (!entry_name || !value_str) {
+                            return ParseResult::InvalidXml;
+                        }
                         auto enum_value_opt = _parseEnumValue(value_str);
                         if (!enum_value_opt) {
                             return ParseResult::EnumParseError;
@@ -302,14 +295,20 @@ namespace mav {
             }
         }
 
-        auto messages_node = root_node->first_node("messages");
+        auto messages_node = root_node->FirstChildElement("messages");
         if (messages_node) {
-            for (auto message = messages_node->first_node();
+            for (auto message = messages_node->FirstChildElement();
                  message != nullptr;
-                 message = message->next_sibling()) {
+                 message = message->NextSiblingElement()) {
 
-                const std::string message_name = message->first_attribute("name")->value();
-                auto message_id_opt = _strict_stoul(message->first_attribute("id")->value());
+                const char* message_name_attr = message->Attribute("name");
+                const char* message_id_attr = message->Attribute("id");
+                if (!message_name_attr || !message_id_attr) {
+                    return ParseResult::InvalidXml;
+                }
+                
+                const std::string message_name = message_name_attr;
+                auto message_id_opt = _strict_stoul(message_id_attr);
                 if (!message_id_opt || message_id_opt.value() > INT_MAX) {
                     return ParseResult::InvalidXml;
                 }
@@ -320,26 +319,34 @@ namespace mav {
                 std::string description;
 
                 bool in_extension_fields = false;
-                for (auto field = message->first_node();
+                for (auto field = message->FirstChildElement();
                      field != nullptr;
-                     field = field->next_sibling()) {
+                     field = field->NextSiblingElement()) {
 
-                    if (std::string_view{"description"} == field->name()) {
-                        description = field->value();
-                    } else if (std::string_view{"extensions"} == field->name()) {
+                    if (std::string_view{"description"} == field->Name()) {
+                        const char* desc_text = field->GetText();
+                        if (desc_text) {
+                            description = desc_text;
+                        }
+                    } else if (std::string_view{"extensions"} == field->Name()) {
                         in_extension_fields = true;
-                    } else if (std::string_view{"field"} == field->name()) {
+                    } else if (std::string_view{"field"} == field->Name()) {
                         // parse the field
-                        auto field_type_opt = _parseFieldType(field->first_attribute("type")->value());
+                        const char* field_type_attr = field->Attribute("type");
+                        const char* field_name_attr = field->Attribute("name");
+                        if (!field_type_attr || !field_name_attr) {
+                            return ParseResult::InvalidXml;
+                        }
+                        
+                        auto field_type_opt = _parseFieldType(field_type_attr);
                         if (!field_type_opt) {
                             return ParseResult::FieldTypeError;
                         }
-                        auto field_name = field->first_attribute("name")->value();
 
                         if (!in_extension_fields) {
-                            builder.addField(field_name, field_type_opt.value());
+                            builder.addField(field_name_attr, field_type_opt.value());
                         } else {
-                            builder.addExtensionField(field_name, field_type_opt.value());
+                            builder.addExtensionField(field_name_attr, field_type_opt.value());
                         }
                     }
                 }

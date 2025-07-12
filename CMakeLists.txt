@@ -28,10 +28,10 @@ target_include_directories(
 
 target_compile_features(mav PUBLIC cxx_std_17)
 
-find_package(rapidxml REQUIRED)
+find_package(tinyxml2 REQUIRED)
 find_package(picosha2 REQUIRED)
 target_link_libraries(mav
-        PUBLIC rapidxml::rapidxml picosha2::picosha2)
+        PUBLIC tinyxml2::tinyxml2 picosha2::picosha2)
 
 install(TARGETS mav
         EXPORT ${PROJECT_NAME}_Targets

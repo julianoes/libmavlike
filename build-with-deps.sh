@@ -29,14 +29,16 @@ install_dir="${script_dir}/deps/install"
 
 mkdir -p deps
 pushd deps > /dev/null
-if [ ! -d "rapidxml" ]; then
-    git clone https://github.com/timniederhausen/rapidxml.git
+
+# Build and install tinyxml2
+if [ ! -d "tinyxml2" ]; then
+    git clone https://github.com/leethomason/tinyxml2.git
 fi
-pushd rapidxml > /dev/null
+pushd tinyxml2 > /dev/null
 git fetch
-git checkout ce0fb9a
+git checkout 10.0.0  # Use stable release
 cmake -Bbuild -S. \
-    -DRAPIDXML_BUILD_TESTS=OFF -DRAPIDXML_INSTALL=ON \
+    -DTINYXML2_BUILD_TESTING=OFF \
     -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
     -DCMAKE_INSTALL_PREFIX="${install_dir}"
 cmake --build build --target install
