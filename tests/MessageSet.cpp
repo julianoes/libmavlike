@@ -298,7 +298,7 @@ TEST_CASE("Message set creation") {
     SUBCASE("Enum access") {
         auto enum_opt = message_set.getEnum("MAV_TYPE_GENERIC");
         REQUIRE(enum_opt.has_value());
-        CHECK_GT(enum_opt.value(), 0);
+        CHECK_EQ(enum_opt.value(), 0);
         
         // Test nonexistent enum
         auto invalid_enum = message_set.getEnum("NONEXISTENT_ENUM");
