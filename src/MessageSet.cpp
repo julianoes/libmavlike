@@ -115,11 +115,11 @@ namespace mav {
             }
             
             // Check for overflow
-            if (result > (UINT64_MAX - digit_value) / base) {
+            if (result > (UINT64_MAX - static_cast<uint64_t>(digit_value)) / static_cast<uint64_t>(base)) {
                 return std::nullopt;
             }
             
-            result = result * base + digit_value;
+            result = result * static_cast<uint64_t>(base) + static_cast<uint64_t>(digit_value);
         }
         
         return result;

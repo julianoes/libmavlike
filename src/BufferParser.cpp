@@ -80,13 +80,13 @@ namespace mav {
                               (message_is_signed ? MessageDefinition::SIGNATURE_SIZE : 0);
 
         // Check if we have the complete message
-        if (start_pos + wire_length > buffer_size) {
+        if (start_pos + static_cast<size_t>(wire_length) > buffer_size) {
             bytes_consumed = start_pos; // Consumed bytes up to magic byte
             return std::nullopt;
         }
 
         // Copy the complete message
-        std::memcpy(backing_memory.data(), buffer + start_pos, wire_length);
+        std::memcpy(backing_memory.data(), buffer + start_pos, static_cast<size_t>(wire_length));
         
         const int crc_offset = MessageDefinition::HEADER_SIZE + header.len();
 
@@ -94,7 +94,7 @@ namespace mav {
         auto definition_opt = _message_set.getMessageDefinition(header.msgId());
         if (!definition_opt) {
             // Unknown message, skip it
-            bytes_consumed = start_pos + wire_length;
+            bytes_consumed = start_pos + static_cast<size_t>(wire_length);
             return std::nullopt;
         }
         auto& definition = definition_opt.get();
@@ -107,14 +107,14 @@ namespace mav {
 
         if (crc_received != crc.crc16()) {
             // CRC error, skip this message
-            bytes_consumed = start_pos + wire_length;
+            bytes_consumed = start_pos + static_cast<size_t>(wire_length);
             return std::nullopt;
         }
 
         // Create Message object
         // For BufferParser, we use a default ConnectionPartner since we don't have network info
         ConnectionPartner partner{0, 0, false}; // Default address=0, port=0, not UART
-        bytes_consumed = start_pos + wire_length;
+        bytes_consumed = start_pos + static_cast<size_t>(wire_length);
         
         return Message::_instantiateFromMemory(definition, partner, crc_offset, std::move(backing_memory));
     }

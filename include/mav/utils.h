@@ -49,7 +49,7 @@ namespace mav {
 
     public:
         inline void accumulate(uint8_t d) {
-            uint8_t tmp = d ^ (_crc & 0xFF);
+            uint8_t tmp = d ^ static_cast<uint8_t>(_crc & 0xFF);
             tmp ^=  (tmp << 4);
             _crc = (_crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4);
         }

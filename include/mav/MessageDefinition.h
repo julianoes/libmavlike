@@ -251,7 +251,7 @@ namespace mav {
             explicit _SignatureField(BackingMemoryPointerType ptr) : _ptr(ptr) {}
 
             operator uint64_t() const {
-                return static_cast<uint64_t>((*static_cast<const uint64_t*>(static_cast<const void*>(_ptr))) & 0xFFFFFFFFFFFF);
+                return (*static_cast<const uint64_t*>(static_cast<const void*>(_ptr))) & 0xFFFFFFFFFFFF;
             }
 
             _SignatureField& operator=(uint64_t v) {

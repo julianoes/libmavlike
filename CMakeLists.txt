@@ -29,6 +29,17 @@ target_include_directories(
 
 target_compile_features(mav PUBLIC cxx_std_17)
 
+# Enable comprehensive warning flags
+target_compile_options(mav PRIVATE
+    -Wall -Wextra -Wpedantic
+    -Wconversion -Wsign-conversion
+    -Wunused -Wshadow
+    -Wnon-virtual-dtor -Woverloaded-virtual
+    -Wduplicated-cond -Wduplicated-branches
+    -Wlogical-op -Wnull-dereference
+    -Wuseless-cast -Wdouble-promotion
+)
+
 find_package(tinyxml2 REQUIRED)
 find_package(picosha2 REQUIRED)
 target_link_libraries(mav

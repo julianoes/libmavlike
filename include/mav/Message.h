@@ -365,7 +365,7 @@ namespace mav {
 
                 // handle std::vector: Dynamically resize for convenience
                 if constexpr(std::is_same<T, std::vector<typename T::value_type>>::value) {
-                    out_value.resize(field.type.size);
+                    out_value.resize(static_cast<size_t>(field.type.size));
                 }
 
                 if (static_cast<int>(out_value.size()) < field.type.size) {
@@ -373,7 +373,7 @@ namespace mav {
                 }
 
                 for (int i=0; i<field.type.size; i++) {
-                    out_value[i] = _readSingle<typename T::value_type>(field, i * field.type.baseSize());
+                    out_value[static_cast<size_t>(i)] = _readSingle<typename T::value_type>(field, i * field.type.baseSize());
                 }
                 return MessageResult::Success;
             } else {

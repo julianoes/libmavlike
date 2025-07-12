@@ -298,17 +298,17 @@ namespace mav {
         int signature_size = 0;
         if (sign) {
             // Set signature data directly without using throwing signature() accessors
-            _backing_memory[MessageDefinition::HEADER_SIZE + payload_size + MessageDefinition::CHECKSUM_SIZE] = linkId;
+            _backing_memory[static_cast<size_t>(MessageDefinition::HEADER_SIZE + payload_size + MessageDefinition::CHECKSUM_SIZE)] = linkId;
             
             // Set timestamp
-            uint8_t* timestamp_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + payload_size + 
-                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE];
+            uint8_t* timestamp_ptr = &_backing_memory[static_cast<size_t>(MessageDefinition::HEADER_SIZE + payload_size + 
+                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE)];
             serialize(timestamp & 0xFFFFFFFFFFFF, timestamp_ptr);
             
             // Compute and set signature
             uint64_t computed_signature = _computeSignatureHash48(key, linkId, timestamp);
-            uint8_t* signature_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + payload_size + 
-                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE];
+            uint8_t* signature_ptr = &_backing_memory[static_cast<size_t>(MessageDefinition::HEADER_SIZE + payload_size + 
+                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE)];
             serialize(computed_signature & 0xFFFFFFFFFFFF, signature_ptr);
             
             signature_size = MessageDefinition::SIGNATURE_SIZE;
