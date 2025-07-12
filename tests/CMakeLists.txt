@@ -5,6 +5,7 @@ add_executable(tests
         MessageSet.cpp
         MessageDefinition.cpp
         MessageFieldIterator.cpp
+        BufferParser.cpp
         NoExceptions.cpp)
 
 add_test(NAME tests COMMAND tests)
