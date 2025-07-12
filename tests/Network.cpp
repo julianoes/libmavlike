@@ -164,10 +164,14 @@ TEST_CASE("Network runtime") {
 
     SUBCASE("Can send message") {
         interface.reset();
-        auto message = message_set.create("TEST_MESSAGE")({
+        auto message_opt = message_set.create("TEST_MESSAGE");
+        REQUIRE(message_opt.has_value());
+        auto message = message_opt.value();
+        auto set_result = message.set({
           {"value", 42},
-          {"text", "Hello World!"}
+          {"text", std::string("Hello World!")}
         });
+        REQUIRE_EQ(set_result, MessageResult::Success);
         connection->send(message);
         bool found = (interface.sendSpongeContains(
                 "\xfd\x10\x00\x00\x00\xfd\x01\xbc\x26\x00\x2a\x00\x00\x00\x48\x65\x6c\x6c\x6f\x20\x57\x6f\x72\x6c\x64\x21\x86\x37"s, interface_partner));
@@ -180,8 +184,16 @@ TEST_CASE("Network runtime") {
         interface.addToReceiveQueue("\xfd\x10\x00\x00\x01\x61\x61\xbc\x26\x00\x2a\x00\x00\x00\x48\x65\x6c\x6c\x6f\x20\x57\x6f\x72\x6c\x64\x21\x53\xd9"s, interface_partner);
         auto message = connection->receive(expectation);
         CHECK_EQ(message.name(), "TEST_MESSAGE");
-        CHECK_EQ(message.get<int>("value"), 42);
-        CHECK_EQ(message.get<std::string>("text"), "Hello World!");
+        
+        int value;
+        auto value_result = message.get("value", value);
+        CHECK_EQ(value_result, MessageResult::Success);
+        CHECK_EQ(value, 42);
+        
+        std::string text;
+        auto text_result = message.getString("text", text);
+        CHECK_EQ(text_result, MessageResult::Success);
+        CHECK_EQ(text, "Hello World!");
     }
 
     SUBCASE("Selects correct message for specific message id, system id, component id") {
@@ -282,10 +294,14 @@ TEST_CASE("Network runtime") {
     }
 
     SUBCASE("Enable message signing") {
-        auto message = message_set.create("TEST_MESSAGE")({
+        auto message_opt = message_set.create("TEST_MESSAGE");
+        REQUIRE(message_opt.has_value());
+        auto message = message_opt.value();
+        auto set_result = message.set({
           {"value", 42},
-          {"text", "Hello World!"}
+          {"text", std::string("Hello World!")}
         });
+        REQUIRE_EQ(set_result, MessageResult::Success);
         interface.reset();
         network.enableMessageSigning(key);
         connection->send(message);
@@ -298,10 +314,14 @@ TEST_CASE("Network runtime") {
     }
 
     SUBCASE("Enable message signing with custom timestamp function") {
-        auto message = message_set.create("TEST_MESSAGE")({
+        auto message_opt = message_set.create("TEST_MESSAGE");
+        REQUIRE(message_opt.has_value());
+        auto message = message_opt.value();
+        auto set_result = message.set({
           {"value", 42},
-          {"text", "Hello World!"}
+          {"text", std::string("Hello World!")}
         });
+        REQUIRE_EQ(set_result, MessageResult::Success);
         interface.reset();
         network.enableMessageSigning(key, getTimestamp);
         connection->send(message);
@@ -313,10 +333,14 @@ TEST_CASE("Network runtime") {
     }
 
     SUBCASE("Disable message signing") {
-        auto message = message_set.create("TEST_MESSAGE")({
+        auto message_opt = message_set.create("TEST_MESSAGE");
+        REQUIRE(message_opt.has_value());
+        auto message = message_opt.value();
+        auto set_result = message.set({
           {"value", 42},
-          {"text", "Hello World!"}
+          {"text", std::string("Hello World!")}
         });
+        REQUIRE_EQ(set_result, MessageResult::Success);
         interface.reset();
         network.disableMessageSigning();
         connection->send(message);

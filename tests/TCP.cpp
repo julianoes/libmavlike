@@ -84,13 +84,17 @@ TEST_CASE("TCP server client") {
         });
 
         // setup client
-        auto heartbeat = message_set.create("HEARTBEAT")({
-                                                                 {"type", 1},
-                                                                 {"autopilot", 2},
-                                                                 {"base_mode", 3},
-                                                                 {"custom_mode", 4},
-                                                                 {"system_status", 5},
-                                                                 {"mavlink_version", 6}});
+        auto heartbeat_opt = message_set.create("HEARTBEAT");
+        REQUIRE(heartbeat_opt.has_value());
+        auto heartbeat = heartbeat_opt.value();
+        auto result = heartbeat.set({
+                                        {"type", static_cast<uint8_t>(1)},
+                                        {"autopilot", static_cast<uint8_t>(2)},
+                                        {"base_mode", static_cast<uint8_t>(3)},
+                                        {"custom_mode", static_cast<uint32_t>(4)},
+                                        {"system_status", static_cast<uint8_t>(5)},
+                                        {"mavlink_version", static_cast<uint8_t>(6)}});
+        REQUIRE_EQ(result, mav::MessageResult::Success);
 
         mav::TCPClient client_physical("localhost", PORT);
         mav::NetworkRuntime client_runtime(message_set, heartbeat, client_physical);
@@ -104,33 +108,48 @@ TEST_CASE("TCP server client") {
 
         SUBCASE("Can send message from server to client over TCP") {
             auto client_expectation = client->expect("TEST_MESSAGE");
-            server->send(message_set.create("TEST_MESSAGE")({
-                                                                   {"message", "hello client"}
-                                                           }));
+            auto test_msg_opt = message_set.create("TEST_MESSAGE");
+            REQUIRE(test_msg_opt.has_value());
+            auto test_msg = test_msg_opt.value();
+            auto result = test_msg.setString("message", "hello client");
+            REQUIRE_EQ(result, mav::MessageResult::Success);
+            server->send(test_msg);
             auto client_message = client->receive(client_expectation, 100);
-            std::string message = client_message["message"].as<std::string>();
+            std::string message;
+            auto get_result = client_message.getString("message", message);
+            CHECK_EQ(get_result, mav::MessageResult::Success);
             CHECK_EQ(message, "hello client");
         }
 
         SUBCASE("Can send message from client to server over TCP") {
             auto server_expectation = server->expect("TEST_MESSAGE");
-            client->send(message_set.create("TEST_MESSAGE")({
-                                                                   {"message", "hello server"},
-                                                           }));
+            auto test_msg_opt = message_set.create("TEST_MESSAGE");
+            REQUIRE(test_msg_opt.has_value());
+            auto test_msg = test_msg_opt.value();
+            auto result = test_msg.setString("message", "hello server");
+            REQUIRE_EQ(result, mav::MessageResult::Success);
+            client->send(test_msg);
             auto server_message = server->receive(server_expectation, 100);
-            CHECK_EQ(server_message["message"].as<std::string>(), "hello server");
+            std::string message;
+            auto get_result = server_message.getString("message", message);
+            CHECK_EQ(get_result, mav::MessageResult::Success);
+            CHECK_EQ(message, "hello server");
         }
 
 
         SUBCASE("Can connect two TCP clients that both can send messages to server") {
             // setup client 2
-            auto heartbeat2 = message_set.create("HEARTBEAT")({
-                                                                  {"type", 1},
-                                                                  {"autopilot", 2},
-                                                                  {"base_mode", 3},
-                                                                  {"custom_mode", 4},
-                                                                  {"system_status", 5},
-                                                                  {"mavlink_version", 6}});
+            auto heartbeat2_opt = message_set.create("HEARTBEAT");
+            REQUIRE(heartbeat2_opt.has_value());
+            auto heartbeat2 = heartbeat2_opt.value();
+            auto result2 = heartbeat2.set({
+                                            {"type", static_cast<uint8_t>(1)},
+                                            {"autopilot", static_cast<uint8_t>(2)},
+                                            {"base_mode", static_cast<uint8_t>(3)},
+                                            {"custom_mode", static_cast<uint32_t>(4)},
+                                            {"system_status", static_cast<uint8_t>(5)},
+                                            {"mavlink_version", static_cast<uint8_t>(6)}});
+            REQUIRE_EQ(result2, mav::MessageResult::Success);
 
             std::promise<std::shared_ptr<mav::Connection>> connection2_promise;
             server_runtime.onConnection([&connection2_promise](const std::shared_ptr<mav::Connection> &connection) {
@@ -149,19 +168,31 @@ TEST_CASE("TCP server client") {
             auto server_expectation1 = server->expect("TEST_MESSAGE");
             auto server_expectation2 = server2->expect("TEST_MESSAGE");
 
-            client->send(message_set.create("TEST_MESSAGE")({
-                                                                    {"message", "hello from client 1"},
-                                                            }));
-            client2->send(message_set.create("TEST_MESSAGE")({
-                                                                    {"message", "hello from client 2"},
-                                                            }));
+            auto test_msg1_opt = message_set.create("TEST_MESSAGE");
+            REQUIRE(test_msg1_opt.has_value());
+            auto test_msg1 = test_msg1_opt.value();
+            auto result1 = test_msg1.setString("message", "hello from client 1");
+            REQUIRE_EQ(result1, mav::MessageResult::Success);
+            client->send(test_msg1);
+            
+            auto test_msg2_opt = message_set.create("TEST_MESSAGE");
+            REQUIRE(test_msg2_opt.has_value());
+            auto test_msg2 = test_msg2_opt.value();
+            auto set_result2 = test_msg2.setString("message", "hello from client 2");
+            REQUIRE_EQ(set_result2, mav::MessageResult::Success);
+            client2->send(test_msg2);
 
             auto server_message1 = server->receive(server_expectation1, 100);
             auto server_message2 = server2->receive(server_expectation2, 100);
 
             CHECK_NE(server_message1.source(), server_message2.source());
-            CHECK_EQ(server_message1["message"].as<std::string>(), "hello from client 1");
-            CHECK_EQ(server_message2["message"].as<std::string>(), "hello from client 2");
+            std::string message1, message2;
+            auto get_result1 = server_message1.getString("message", message1);
+            auto get_result2 = server_message2.getString("message", message2);
+            CHECK_EQ(get_result1, mav::MessageResult::Success);
+            CHECK_EQ(get_result2, mav::MessageResult::Success);
+            CHECK_EQ(message1, "hello from client 1");
+            CHECK_EQ(message2, "hello from client 2");
         }
 
     }

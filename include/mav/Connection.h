@@ -228,7 +228,12 @@ namespace mav {
 
         CallbackHandle addMessageCallback(const std::string &message_name, const std::function<void(const mav::Message&)> &on_message,
                                           int source_id=mav::ANY_ID, int component_id=mav::ANY_ID) {
-            return addMessageCallback(_message_set.idForMessage(message_name), on_message, source_id, component_id);
+            auto id_opt = _message_set.idForMessage(message_name);
+            if (!id_opt) {
+                // Return invalid handle for unknown message names
+                return CallbackHandle{};
+            }
+            return addMessageCallback(id_opt.value(), on_message, source_id, component_id);
         }
 
         void removeMessageCallback(CallbackHandle handle) {
@@ -256,7 +261,12 @@ namespace mav {
 
         [[nodiscard]] inline Expectation expect(const std::string &message_name, int source_id=mav::ANY_ID,
                                          int component_id=mav::ANY_ID) {
-            return expect(_message_set.idForMessage(message_name), source_id, component_id);
+            auto id_opt = _message_set.idForMessage(message_name);
+            if (!id_opt) {
+                // For unknown message names, use a predicate that will never match
+                return expect([](const Message &) { return false; });
+            }
+            return expect(id_opt.value(), source_id, component_id);
         }
 
         Message receive(const Expectation &expectation, int timeout_ms=-1) const {

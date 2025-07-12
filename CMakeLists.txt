@@ -15,19 +15,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_library(mav INTERFACE)
+add_library(mav STATIC
+    src/MessageDefinition.cpp
+    src/MessageSet.cpp
+    src/Message.cpp
+)
 
 target_include_directories(
         mav
-        INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
-target_compile_features(mav INTERFACE cxx_std_17)
+target_compile_features(mav PUBLIC cxx_std_17)
 
 find_package(rapidxml REQUIRED)
 find_package(picosha2 REQUIRED)
 target_link_libraries(mav
-        INTERFACE rapidxml::rapidxml picosha2::picosha2)
+        PUBLIC rapidxml::rapidxml picosha2::picosha2)
 
 install(TARGETS mav
         EXPORT ${PROJECT_NAME}_Targets

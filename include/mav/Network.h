@@ -179,12 +179,17 @@ namespace mav {
         std::function<void(const std::shared_ptr<Connection>&)> _on_connection_lost;
 
         void _sendMessage(Message &message, const ConnectionPartner &partner) {
-            int wire_length;
+            std::optional<uint32_t> wire_length_opt;
             if (_sign) {
-                wire_length = static_cast<int>(message.finalize(_seq++, _own_id, _key, _get_timestamp_function()));
+                wire_length_opt = message.finalize(_seq++, _own_id, _key, _get_timestamp_function());
             } else {
-                wire_length = static_cast<int>(message.finalize(_seq++, _own_id));
+                wire_length_opt = message.finalize(_seq++, _own_id);
             }
+            if (!wire_length_opt) {
+                // Failed to finalize message, skip sending
+                return;
+            }
+            int wire_length = static_cast<int>(wire_length_opt.value());
             std::unique_lock<std::mutex> lock(_send_mutex);
             _interface.send(message.data(), wire_length, partner);
         }

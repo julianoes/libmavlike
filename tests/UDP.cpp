@@ -98,13 +98,17 @@ TEST_CASE("UDP server client") {
 
 
         // setup client
-        auto heartbeat = message_set.create("HEARTBEAT")({
-            {"type", 1},
-            {"autopilot", 2},
-            {"base_mode", 3},
-            {"custom_mode", 4},
-            {"system_status", 5},
-            {"mavlink_version", 6}});
+        auto heartbeat_opt = message_set.create("HEARTBEAT");
+        REQUIRE(heartbeat_opt.has_value());
+        auto heartbeat = heartbeat_opt.value();
+        auto set_result = heartbeat.set({
+            {"type", static_cast<uint8_t>(1)},
+            {"autopilot", static_cast<uint8_t>(2)},
+            {"base_mode", static_cast<uint8_t>(3)},
+            {"custom_mode", static_cast<uint32_t>(4)},
+            {"system_status", static_cast<uint8_t>(5)},
+            {"mavlink_version", static_cast<uint8_t>(6)}});
+        REQUIRE_EQ(set_result, MessageResult::Success);
 
         mav::UDPClient client_physical("127.0.0.1", 19334);
         mav::NetworkRuntime client_runtime(message_set, heartbeat, client_physical);
@@ -118,47 +122,64 @@ TEST_CASE("UDP server client") {
 
         SUBCASE("Can send message from server to client with UDP") {
             auto client_expectation = client->expect("BIG_MESSAGE");
-            server->send(message_set.create("BIG_MESSAGE")({
-                                                                   {"uint8_field", 1},
-                                                                   {"int8_field", 2},
-                                                                   {"uint16_field", 3},
-                                                                   {"int16_field", 4},
-                                                                   {"uint32_field", 5},
-                                                                   {"int32_field", 6},
-                                                                   {"uint64_field", 7},
-                                                                   {"int64_field", 8},
-                                                                   {"double_field", 9},
-                                                                   {"float_field", 10},
-                                                                   {"char_arr_field", "hello client"},
-                                                                   {"float_arr_field", std::vector<float>{1, 2, 3}},
-                                                                   {"int32_arr_field", std::vector<int32_t>{4, 5, 6}},
-                                                                   {"extension_uint8_field", 7},
-                                                           }));
+            auto message_opt = message_set.create("BIG_MESSAGE");
+            REQUIRE(message_opt.has_value());
+            auto message = message_opt.value();
+            auto msg_set_result = message.set({
+                {"uint8_field", static_cast<uint8_t>(1)},
+                {"int8_field", static_cast<int8_t>(2)},
+                {"uint16_field", static_cast<uint16_t>(3)},
+                {"int16_field", static_cast<int16_t>(4)},
+                {"uint32_field", static_cast<uint32_t>(5)},
+                {"int32_field", static_cast<int32_t>(6)},
+                {"uint64_field", static_cast<uint64_t>(7)},
+                {"int64_field", static_cast<int64_t>(8)},
+                {"double_field", 9.0},
+                {"float_field", 10.0f},
+                {"char_arr_field", std::string("hello client")},
+                {"float_arr_field", std::vector<float>{1, 2, 3}},
+                {"int32_arr_field", std::vector<int32_t>{4, 5, 6}},
+                {"extension_uint8_field", static_cast<uint8_t>(7)}
+            });
+            REQUIRE_EQ(msg_set_result, MessageResult::Success);
+            server->send(message);
             auto client_message = client->receive(client_expectation, 100);
 
-            CHECK_EQ(client_message["char_arr_field"].as<std::string>(), "hello client");
+            std::string char_field_value;
+            auto char_result = client_message.getString("char_arr_field", char_field_value);
+            CHECK_EQ(char_result, MessageResult::Success);
+            CHECK_EQ(char_field_value, "hello client");
         }
 
         SUBCASE("Can send message from client to server with UDP") {
             auto server_expectation = server->expect("BIG_MESSAGE");
-            client->send(message_set.create("BIG_MESSAGE")({
-                                                                   {"uint8_field", 1},
-                                                                   {"int8_field", 2},
-                                                                   {"uint16_field", 3},
-                                                                   {"int16_field", 4},
-                                                                   {"uint32_field", 5},
-                                                                   {"int32_field", 6},
-                                                                   {"uint64_field", 7},
-                                                                   {"int64_field", 8},
-                                                                   {"double_field", 9},
-                                                                   {"float_field", 10},
-                                                                   {"char_arr_field", "hello server"},
-                                                                   {"float_arr_field", std::vector<float>{1, 2, 3}},
-                                                                   {"int32_arr_field", std::vector<int32_t>{4, 5, 6}},
-                                                                   {"extension_uint8_field", 7},
-                                                           }));
+            auto client_msg_opt = message_set.create("BIG_MESSAGE");
+            REQUIRE(client_msg_opt.has_value());
+            auto client_msg = client_msg_opt.value();
+            auto client_set_result = client_msg.set({
+                {"uint8_field", static_cast<uint8_t>(1)},
+                {"int8_field", static_cast<int8_t>(2)},
+                {"uint16_field", static_cast<uint16_t>(3)},
+                {"int16_field", static_cast<int16_t>(4)},
+                {"uint32_field", static_cast<uint32_t>(5)},
+                {"int32_field", static_cast<int32_t>(6)},
+                {"uint64_field", static_cast<uint64_t>(7)},
+                {"int64_field", static_cast<int64_t>(8)},
+                {"double_field", 9.0},
+                {"float_field", 10.0f},
+                {"char_arr_field", std::string("hello server")},
+                {"float_arr_field", std::vector<float>{1, 2, 3}},
+                {"int32_arr_field", std::vector<int32_t>{4, 5, 6}},
+                {"extension_uint8_field", static_cast<uint8_t>(7)}
+            });
+            REQUIRE_EQ(client_set_result, MessageResult::Success);
+            client->send(client_msg);
             auto server_message = server->receive(server_expectation, 100);
-            CHECK_EQ(server_message["char_arr_field"].as<std::string>(), "hello server");
+            
+            std::string server_char_field;
+            auto server_char_result = server_message.getString("char_arr_field", server_char_field);
+            CHECK_EQ(server_char_result, MessageResult::Success);
+            CHECK_EQ(server_char_field, "hello server");
         }
 
     }
@@ -176,13 +197,17 @@ TEST_CASE("UDP server client") {
         });
 
         // setup client
-        auto heartbeat = message_set.create("HEARTBEAT")({
-                                                                 {"type",            1},
-                                                                 {"autopilot",       2},
-                                                                 {"base_mode",       3},
-                                                                 {"custom_mode",     4},
-                                                                 {"system_status",   5},
-                                                                 {"mavlink_version", 6}});
+        auto heartbeat_opt = message_set.create("HEARTBEAT");
+        REQUIRE(heartbeat_opt.has_value());
+        auto heartbeat = heartbeat_opt.value();
+        auto hb_set_result = heartbeat.set({
+            {"type", static_cast<uint8_t>(1)},
+            {"autopilot", static_cast<uint8_t>(2)},
+            {"base_mode", static_cast<uint8_t>(3)},
+            {"custom_mode", static_cast<uint32_t>(4)},
+            {"system_status", static_cast<uint8_t>(5)},
+            {"mavlink_version", static_cast<uint8_t>(6)}});
+        REQUIRE_EQ(hb_set_result, MessageResult::Success);
         mav::UDPClient client_physical("127.0.0.1", 19334);
         mav::NetworkRuntime client_runtime(message_set, heartbeat, client_physical);
 
@@ -238,13 +263,17 @@ TEST_CASE("UDP server client") {
         });
 
         // setup client
-        auto heartbeat = message_set.create("HEARTBEAT")({
-                                                                 {"type",            1},
-                                                                 {"autopilot",       2},
-                                                                 {"base_mode",       3},
-                                                                 {"custom_mode",     4},
-                                                                 {"system_status",   5},
-                                                                 {"mavlink_version", 6}});
+        auto heartbeat_opt = message_set.create("HEARTBEAT");
+        REQUIRE(heartbeat_opt.has_value());
+        auto heartbeat = heartbeat_opt.value();
+        auto hb_set_result = heartbeat.set({
+            {"type", static_cast<uint8_t>(1)},
+            {"autopilot", static_cast<uint8_t>(2)},
+            {"base_mode", static_cast<uint8_t>(3)},
+            {"custom_mode", static_cast<uint32_t>(4)},
+            {"system_status", static_cast<uint8_t>(5)},
+            {"mavlink_version", static_cast<uint8_t>(6)}});
+        REQUIRE_EQ(hb_set_result, MessageResult::Success);
 
         mav::UDPClient client_physical("127.0.0.1", 19334);
         mav::NetworkRuntime client_runtime(message_set, heartbeat, client_physical);

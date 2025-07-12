@@ -40,7 +40,7 @@ using namespace mav;
 
 TEST_CASE("Message set methods") {
     MessageSet message_set;
-    message_set.addFromXMLString(R""""(
+    auto result = message_set.addFromXMLString(R""""(
     <mavlink>
         <messages>
             <message id="9915" name="BIG_MESSAGE">
@@ -63,10 +63,14 @@ TEST_CASE("Message set methods") {
         </messages>
     </mavlink>
     )"""");
-
+    
+    REQUIRE_EQ(result, MessageSetResult::Success);
     REQUIRE(message_set.contains("BIG_MESSAGE"));
     REQUIRE_EQ(message_set.size(), 1);
-    auto message = message_set.create("BIG_MESSAGE");
+    
+    auto message_opt = message_set.create("BIG_MESSAGE");
+    REQUIRE(message_opt.has_value());
+    auto message = message_opt.value();
     auto& definition = message.type();
 
     SUBCASE("Getters") {
@@ -82,26 +86,65 @@ TEST_CASE("Message set methods") {
     }
 
     SUBCASE("Get field for name") {
-        CHECK_EQ(definition.fieldForName("uint8_field").type.base_type, FieldType::BaseType::UINT8);
-        CHECK_EQ(definition.fieldForName("int8_field").type.base_type, FieldType::BaseType::INT8);
-        CHECK_EQ(definition.fieldForName("uint16_field").type.base_type, FieldType::BaseType::UINT16);
-        CHECK_EQ(definition.fieldForName("int16_field").type.base_type, FieldType::BaseType::INT16);
-        CHECK_EQ(definition.fieldForName("uint32_field").type.base_type, FieldType::BaseType::UINT32);
-        CHECK_EQ(definition.fieldForName("int32_field").type.base_type, FieldType::BaseType::INT32);
-        CHECK_EQ(definition.fieldForName("uint64_field").type.base_type, FieldType::BaseType::UINT64);
-        CHECK_EQ(definition.fieldForName("int64_field").type.base_type, FieldType::BaseType::INT64);
-        CHECK_EQ(definition.fieldForName("double_field").type.base_type, FieldType::BaseType::DOUBLE);
-        CHECK_EQ(definition.fieldForName("float_field").type.base_type, FieldType::BaseType::FLOAT);
-        CHECK_EQ(definition.fieldForName("char_arr_field").type.base_type, FieldType::BaseType::CHAR);
-        CHECK_EQ(definition.fieldForName("float_arr_field").type.base_type, FieldType::BaseType::FLOAT);
-        CHECK_EQ(definition.fieldForName("int32_arr_field").type.base_type, FieldType::BaseType::INT32);
-        CHECK_EQ(definition.fieldForName("char_arr_field").type.size, 20);
-        CHECK_EQ(definition.fieldForName("float_arr_field").type.size, 3);
-        CHECK_EQ(definition.fieldForName("int32_arr_field").type.size, 3);
+        auto field_opt = definition.getField("uint8_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::UINT8);
+        
+        field_opt = definition.getField("int8_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::INT8);
+        
+        field_opt = definition.getField("uint16_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::UINT16);
+        
+        field_opt = definition.getField("int16_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::INT16);
+        
+        field_opt = definition.getField("uint32_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::UINT32);
+        
+        field_opt = definition.getField("int32_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::INT32);
+        
+        field_opt = definition.getField("uint64_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::UINT64);
+        
+        field_opt = definition.getField("int64_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::INT64);
+        
+        field_opt = definition.getField("double_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::DOUBLE);
+        
+        field_opt = definition.getField("float_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::FLOAT);
+        
+        field_opt = definition.getField("char_arr_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::CHAR);
+        CHECK_EQ(field_opt.value().type.size, 20);
+        
+        field_opt = definition.getField("float_arr_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::FLOAT);
+        CHECK_EQ(field_opt.value().type.size, 3);
+        
+        field_opt = definition.getField("int32_arr_field");
+        REQUIRE(field_opt.has_value());
+        CHECK_EQ(field_opt.value().type.base_type, FieldType::BaseType::INT32);
+        CHECK_EQ(field_opt.value().type.size, 3);
     }
 
     SUBCASE("Get non existing field") {
-        CHECK_THROWS_AS((void)definition.fieldForName("non_existing_field"), std::out_of_range);
+        // In no-exceptions mode, we check if field exists before accessing it
+        CHECK_FALSE(definition.containsField("non_existing_field"));
     }
 
     SUBCASE("Contains fields") {

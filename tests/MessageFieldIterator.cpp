@@ -41,7 +41,7 @@ using namespace mav;
 
 TEST_CASE("Message field iterator") {
     MessageSet message_set;
-    message_set.addFromXMLString(R""""(
+    auto result = message_set.addFromXMLString(R""""(
 <mavlink>
     <messages>
         <message id="9915" name="BIG_MESSAGE">
@@ -64,23 +64,27 @@ TEST_CASE("Message field iterator") {
 </mavlink>
 )"""");
 
+    REQUIRE_EQ(result, MessageSetResult::Success);
     REQUIRE(message_set.contains("BIG_MESSAGE"));
     REQUIRE_EQ(message_set.size(), 1);
 
-    auto message = message_set.create("BIG_MESSAGE");
-    message.set("uint8_field", 1);
-    message.set("int8_field", 2);
-    message.set("uint16_field", 3);
-    message.set("int16_field", 4);
-    message.set("uint32_field", 5);
-    message.set("int32_field", 6);
-    message.set("uint64_field", 7);
-    message.set("int64_field", 8);
-    message.set("double_field", 9.0);
-    message.set("float_field", 10.0);
-    message.set("char_arr_field", "Hello World");
-    message.set("float_arr_field", std::vector<float>{1.0, 2.0, 3.0});
-    message.set("int32_arr_field", std::vector<int32_t>{4, 5, 6});
+    auto message_opt = message_set.create("BIG_MESSAGE");
+    REQUIRE(message_opt.has_value());
+    auto message = message_opt.value();
+    
+    CHECK_EQ(message.set("uint8_field", static_cast<uint8_t>(1)), MessageResult::Success);
+    CHECK_EQ(message.set("int8_field", static_cast<int8_t>(2)), MessageResult::Success);
+    CHECK_EQ(message.set("uint16_field", static_cast<uint16_t>(3)), MessageResult::Success);
+    CHECK_EQ(message.set("int16_field", static_cast<int16_t>(4)), MessageResult::Success);
+    CHECK_EQ(message.set("uint32_field", static_cast<uint32_t>(5)), MessageResult::Success);
+    CHECK_EQ(message.set("int32_field", static_cast<int32_t>(6)), MessageResult::Success);
+    CHECK_EQ(message.set("uint64_field", static_cast<uint64_t>(7)), MessageResult::Success);
+    CHECK_EQ(message.set("int64_field", static_cast<int64_t>(8)), MessageResult::Success);
+    CHECK_EQ(message.set("double_field", 9.0), MessageResult::Success);
+    CHECK_EQ(message.set("float_field", 10.0f), MessageResult::Success);
+    CHECK_EQ(message.setString("char_arr_field", "Hello World"), MessageResult::Success);
+    CHECK_EQ(message.set("float_arr_field", std::vector<float>{1.0, 2.0, 3.0}), MessageResult::Success);
+    CHECK_EQ(message.set("int32_arr_field", std::vector<int32_t>{4, 5, 6}), MessageResult::Success);
 
     SUBCASE("Can iterate through fields of message") {
 
