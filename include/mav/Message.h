@@ -436,6 +436,27 @@ namespace mav {
         [[nodiscard]] const uint8_t* data() const noexcept {
             return _backing_memory.data();
         };
+
+        [[nodiscard]] uint32_t finalizedSize() const noexcept {
+            if (!isFinalized()) {
+                return 0;
+            }
+            
+            // Calculate size from MAVLink header
+            const uint8_t* data_ptr = _backing_memory.data();
+            uint32_t data_size = 0;
+            
+            if (data_ptr[0] == 0xFD) { // MAVLink v2
+                data_size = data_ptr[1] + 12; // payload length + header (10) + checksum (2)
+                if (data_ptr[2] & 0x01) { // MAVLINK_IFLAG_SIGNED
+                    data_size += 13; // signature
+                }
+            } else if (data_ptr[0] == 0xFE) { // MAVLink v1
+                data_size = data_ptr[1] + 8; // payload length + header (6) + checksum (2)
+            }
+            
+            return data_size;
+        };
     };
 
 } // namespace mav
