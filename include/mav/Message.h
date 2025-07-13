@@ -41,7 +41,6 @@
 #include <variant>
 #include "MessageDefinition.h"
 #include "utils.h"
-#include <picosha2.h>
 
 namespace mav {
 
@@ -181,26 +180,7 @@ namespace mav {
         }
 
         uint64_t _computeSignatureHash48(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key, 
-                                         uint8_t linkId, uint64_t timestamp) const {
-            // signature = sha256_48(secret_key + header + payload + CRC + link-ID + timestamp)
-            picosha2::hash256_one_by_one hasher;
-            // secret_key
-            hasher.process(key.begin(), key.begin() + MessageDefinition::KEY_SIZE);
-            // header + payload + CRC
-            hasher.process(_backing_memory.begin(), _backing_memory.begin() + 
-                    MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE);
-            // link-ID
-            hasher.process(&linkId, &linkId + MessageDefinition::SIGNATURE_LINK_ID_SIZE);
-            // timestamp
-            std::array<uint8_t, sizeof(timestamp)> timestampSerialized;
-            serialize(timestamp, timestampSerialized.begin());
-            hasher.process(timestampSerialized.begin(), timestampSerialized.begin() + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE);
-
-            hasher.finish();
-            std::vector<unsigned char> hash(picosha2::k_digest_size);
-            hasher.get_hash_bytes(hash.begin(), hash.end());
-            return deserialize<uint64_t>(hash.data(), MessageDefinition::SIGNATURE_SIGNATURE_SIZE);
-        }
+                                         uint8_t linkId, uint64_t timestamp) const;
 
     public:
 

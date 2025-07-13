@@ -56,7 +56,7 @@ namespace mav {
         }
     }
 
-    int FieldType::baseSize() const {
+    int FieldType::baseSize() const noexcept {
         switch(base_type) {
             case BaseType::CHAR: return 1;
             case BaseType::UINT8: return 1;
@@ -73,7 +73,7 @@ namespace mav {
         return 0;
     }
 
-    const char* FieldType::crcNameString() const {
+    const char* FieldType::crcNameString() const noexcept {
         switch(base_type) {
             case BaseType::CHAR: return "char";
             case BaseType::UINT8: return "uint8_t";

@@ -35,7 +35,8 @@
 #ifndef MAV_BUILTINMESSAGES_H
 #define MAV_BUILTINMESSAGES_H
 
-#include <sstream>
+#include <string>
+#include <initializer_list>
 
 namespace mav {
     constexpr char MSG_HEARTBEAT[] =
@@ -50,15 +51,7 @@ namespace mav {
             "    </message>";
 
 
-    std::string messageStringOf(std::initializer_list<const char*> init_list) {
-        std::stringstream ss;
-        ss << "<mavlink><messages>";
-        for (const auto &item : init_list) {
-            ss << item;
-        }
-        ss << "</messages></mavlink>";
-        return ss.str();
-    }
+    std::string messageStringOf(std::initializer_list<const char*> init_list);
 
 };
 

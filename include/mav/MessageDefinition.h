@@ -85,27 +85,27 @@ namespace mav {
         ConnectionPartner(uint32_t address_, uint16_t port_, bool is_uart_) :
         _address(address_), _port(port_), _is_uart(is_uart_) {}
 
-        bool operator==(const ConnectionPartner& other) const {
+        bool operator==(const ConnectionPartner& other) const noexcept {
             return _address == other._address && _port == other._port && _is_uart == other._is_uart;
         }
 
-        bool operator!=(const ConnectionPartner& other) const {
+        bool operator!=(const ConnectionPartner& other) const noexcept {
             return !(*this == other);
         }
 
-        [[nodiscard]] uint32_t address() const {
+        [[nodiscard]] uint32_t address() const noexcept {
             return _address;
         }
 
-        [[nodiscard]] uint16_t port() const {
+        [[nodiscard]] uint16_t port() const noexcept {
             return _port;
         }
 
-        [[nodiscard]] bool isUart() const {
+        [[nodiscard]] bool isUart() const noexcept {
             return _is_uart;
         }
 
-        [[nodiscard]] bool isBroadcast() const {
+        [[nodiscard]] bool isBroadcast() const noexcept {
             return _address == 0 && _port == 0;
         }
 
@@ -113,7 +113,7 @@ namespace mav {
     };
 
     struct _ConnectionPartnerHash {
-        std::size_t operator()(const ConnectionPartner& k) const {
+        std::size_t operator()(const ConnectionPartner& k) const noexcept {
             return (k.isUart() << 17) | (k.address() << 16) | k.port();
         }
     };
@@ -126,15 +126,15 @@ namespace mav {
 
         Identifier(int system_id_, int component_id_) : system_id(system_id_), component_id(component_id_) {}
 
-        bool operator==(const Identifier &o) const {
+        bool operator==(const Identifier &o) const noexcept {
             return system_id == o.system_id && component_id == o.component_id;
         }
 
-        bool operator!=(const Identifier &o) const {
+        bool operator!=(const Identifier &o) const noexcept {
             return system_id != o.system_id || component_id != o.component_id;
         }
 
-        bool filter(const Identifier &o) const {
+        bool filter(const Identifier &o) const noexcept {
             return (system_id == ANY_ID || system_id == o.system_id) && (component_id == ANY_ID || component_id == o.component_id);
         }
     };
@@ -312,9 +312,9 @@ namespace mav {
         BaseType base_type;
         int size;
 
-        [[nodiscard]] int baseSize() const;
+        [[nodiscard]] int baseSize() const noexcept;
 
-        [[nodiscard]] const char* crcNameString() const;
+        [[nodiscard]] const char* crcNameString() const noexcept;
 
 
         FieldType(FieldType::BaseType base_type_, int size_) : base_type(base_type_), size(size_) {}
@@ -355,31 +355,31 @@ namespace mav {
         static constexpr int MAX_MESSAGE_SIZE = MAX_PAYLOAD_SIZE + HEADER_SIZE + CHECKSUM_SIZE + SIGNATURE_SIZE;
         static constexpr int KEY_SIZE = 32;
 
-        [[nodiscard]] inline const std::string& name() const {
+        [[nodiscard]] inline const std::string& name() const noexcept {
             return _name;
         }
 
-        [[nodiscard]] inline int id() const {
+        [[nodiscard]] inline int id() const noexcept {
             return _id;
         }
 
-        [[nodiscard]] inline int maxBufferLength() const {
+        [[nodiscard]] inline int maxBufferLength() const noexcept {
             return _max_buffer_length;
         }
 
-        [[nodiscard]] inline int maxPayloadSize() const {
+        [[nodiscard]] inline int maxPayloadSize() const noexcept {
             return _max_payload_length;
         }
 
-        [[nodiscard]] inline int notExtendedPayloadSize() const {
+        [[nodiscard]] inline int notExtendedPayloadSize() const noexcept {
             return _not_extended_payload_length;
         }
 
-        [[nodiscard]] inline uint8_t crcExtra() const {
+        [[nodiscard]] inline uint8_t crcExtra() const noexcept {
             return _crc_extra;
         }
 
-        [[nodiscard]] std::optional<Field> getField(const std::string &field_key) const {
+        [[nodiscard]] std::optional<Field> getField(const std::string &field_key) const noexcept {
             auto it = _fields.find(field_key);
             if (it == _fields.end()) {
                 return std::nullopt;
@@ -387,7 +387,7 @@ namespace mav {
             return it->second;
         }
 
-        [[nodiscard]] bool containsField(const std::string &field_key) const {
+        [[nodiscard]] bool containsField(const std::string &field_key) const noexcept {
             auto it = _fields.find(field_key);
             if (it == _fields.end()) {
                 return false;
@@ -395,7 +395,7 @@ namespace mav {
             return true;
         }
 
-        [[nodiscard]] const std::map<std::string, Field>& fieldDefinitions() const {
+        [[nodiscard]] const std::map<std::string, Field>& fieldDefinitions() const noexcept {
             return _fields;
         }
 

@@ -20,6 +20,7 @@ add_library(mav STATIC
     src/MessageSet.cpp
     src/Message.cpp
     src/BufferParser.cpp
+    src/BuiltInMessages.cpp
 )
 
 target_include_directories(
