@@ -336,6 +336,7 @@ namespace mav {
         int _id;
         int _max_buffer_length;
         int _max_payload_length;
+        int _not_extended_payload_length;
         uint8_t _crc_extra = 0;
         std::map<std::string, Field> _fields;
 
@@ -368,6 +369,10 @@ namespace mav {
 
         [[nodiscard]] inline int maxPayloadSize() const {
             return _max_payload_length;
+        }
+
+        [[nodiscard]] inline int notExtendedPayloadSize() const {
+            return _not_extended_payload_length;
         }
 
         [[nodiscard]] inline uint8_t crcExtra() const {

@@ -125,6 +125,8 @@ namespace mav {
         }
         _result._crc_extra = crc_extra.crc8();
 
+        _result._not_extended_payload_length = offset - MessageDefinition::HEADER_SIZE;
+
         for (const auto &field : _extension_fields) {
             const auto &type = field.type;
             _result._fields.insert({field.name, {type, offset}});
