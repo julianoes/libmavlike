@@ -457,6 +457,21 @@ namespace mav {
             
             return data_size;
         };
+
+        // Helper methods for clean payload access
+        [[nodiscard]] const uint8_t* getPayloadData() const noexcept {
+            // Payload data starts after the MAVLink v2 header (10 bytes)
+            return _backing_memory.data() + MessageDefinition::HEADER_SIZE;
+        };
+
+        [[nodiscard]] uint8_t getPayloadLength() const noexcept {
+            return static_cast<uint8_t>(_message_definition->maxPayloadSize());
+        };
+
+        // Convenience method that matches the original interface
+        [[nodiscard]] std::pair<const uint8_t*, size_t> getPayloadView() const noexcept {
+            return {getPayloadData(), static_cast<size_t>(getPayloadLength())};
+        };
     };
 
 } // namespace mav
