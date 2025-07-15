@@ -331,7 +331,7 @@ namespace mav {
         hasher.process(&linkId, &linkId + MessageDefinition::SIGNATURE_LINK_ID_SIZE);
         // timestamp
         std::array<uint8_t, sizeof(timestamp)> timestampSerialized;
-        serialize(timestamp, timestampSerialized.begin());
+        serialize(timestamp, timestampSerialized.data());
         hasher.process(timestampSerialized.begin(), timestampSerialized.begin() + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE);
 
         hasher.finish();
