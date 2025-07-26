@@ -59,6 +59,9 @@ namespace mav {
     }
 
     FileLoader::FileLoader(std::istream &stream) : m_valid(false) {
+        if (stream.fail() || stream.bad()) {
+            return;
+        }
         stream.unsetf(std::ios::skipws);
         m_data.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
         if (stream.fail() || stream.bad()) {
