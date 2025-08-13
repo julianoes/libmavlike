@@ -90,13 +90,15 @@ namespace mav {
         if (deserialize_size <= 0) {
             return T{0};
         }
-        if (deserialize_size == sizeof(T)) {
-            return *static_cast<const T*>(static_cast<const void*>(source));
-        } else {
-            uint8_t deserialize_buff[sizeof(T)]{};
-            std::copy(source, source + std::min(static_cast<uint32_t>(deserialize_size), static_cast<uint32_t>(sizeof(T))), deserialize_buff);
-            return *static_cast<const T*>(static_cast<const void*>(deserialize_buff));
-        }
+
+        // Use alignment-safe approach instead of direct pointer casting
+        // This prevents SIGBUS errors on ARM when reading float/double from unaligned addresses
+        alignas(T) uint8_t deserialize_buff[sizeof(T)]{};
+        std::copy(source, source + std::min(static_cast<size_t>(deserialize_size), sizeof(T)), deserialize_buff);
+        T result;
+        auto result_ptr = reinterpret_cast<uint8_t*>(&result);
+        std::copy(deserialize_buff, deserialize_buff + sizeof(T), result_ptr);
+        return result;
     }
 
 
