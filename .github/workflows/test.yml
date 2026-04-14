@@ -1,23 +1,31 @@
 name: Tests
 
 on:
-  - push
+  push:
+    branches:
+      - mavsdk-fork
+  pull_request:
 
 jobs:
   build-test:
     strategy:
-        fail-fast: false
-        matrix:
-            platform:
-              - runner: ubuntu-24.04
-              - runner: macos-13
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-24.04
+          - runner: macos-15
     runs-on: ${{ matrix.platform.runner }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ matrix.platform.runner }}-${{ hashFiles('build-with-deps.sh') }}
 
       - name: Build
         run: ./build-with-deps.sh
 
       - name: Run tests
         run: ./build/tests/tests
-
