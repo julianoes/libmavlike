@@ -81,7 +81,8 @@ TEST_CASE("Message set methods") {
     }
 
     SUBCASE("MAVLink specs") {
-        CHECK_EQ(definition.maxBufferLength(), 112);
+        // Includes the largest header (17 bytes).
+        CHECK_EQ(definition.maxBufferLength(), 119);
         CHECK_EQ(definition.crcExtra(), 0x59);
     }
 

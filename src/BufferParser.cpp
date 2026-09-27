@@ -87,19 +87,35 @@ namespace mav {
         size_t start_pos,
         size_t& bytes_consumed) const noexcept {
 
-        // Check if we have enough bytes for complete v2 header
-        if (start_pos + MessageDefinition::HEADER_SIZE > buffer_size) {
+        // The header size depends on the incompat flags.
+        if (start_pos + 3 > buffer_size) {
             bytes_consumed = start_pos; // Consumed bytes before magic, not including it
             return std::nullopt;
         }
 
-        // Parse header
-        std::array<uint8_t, MessageDefinition::MAX_MESSAGE_SIZE> backing_memory{};
-        std::memcpy(backing_memory.data(), buffer + start_pos, MessageDefinition::HEADER_SIZE);
+        const uint8_t incompat_flags = buffer[start_pos + 2];
 
+        // Unknown incompat flag, skip the magic byte and resync.
+        if (incompat_flags & ~IFLAG_ALL_KNOWN) {
+            bytes_consumed = start_pos + 1;
+            return std::nullopt;
+        }
+
+        std::array<uint8_t, MessageDefinition::MAX_MESSAGE_SIZE> backing_memory{};
+        backing_memory[2] = incompat_flags;
         Header header{backing_memory.data()};
+        const int header_size = header.size();
+
+        // Check if we have enough bytes for the complete v2 header
+        if (start_pos + static_cast<size_t>(header_size) > buffer_size) {
+            bytes_consumed = start_pos;
+            return std::nullopt;
+        }
+
+        std::memcpy(backing_memory.data(), buffer + start_pos, static_cast<size_t>(header_size));
+
         const bool message_is_signed = header.isSigned();
-        const int wire_length = MessageDefinition::HEADER_SIZE + header.len() +
+        const int wire_length = header_size + header.len() +
                                 MessageDefinition::CHECKSUM_SIZE +
                                 (message_is_signed ? MessageDefinition::SIGNATURE_SIZE : 0);
 
@@ -112,7 +128,7 @@ namespace mav {
         // Copy the complete message
         std::memcpy(backing_memory.data(), buffer + start_pos, static_cast<size_t>(wire_length));
 
-        const int crc_offset = MessageDefinition::HEADER_SIZE + header.len();
+        const int crc_offset = header_size + header.len();
 
         // Get message definition
         auto definition_opt = _message_set.getMessageDefinition(header.msgId());

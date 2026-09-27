@@ -80,6 +80,8 @@ namespace mav {
         std::array<uint8_t, MessageDefinition::MAX_MESSAGE_SIZE> _backing_memory{};
         const MessageDefinition* _message_definition{nullptr};
         int _crc_offset{-1};
+        // Set via setExtendedTarget(), applied by finalize().
+        uint32_t _extended_target_system_id{0};
 
         explicit Message(const MessageDefinition &message_definition) :
             _message_definition(&message_definition) {
@@ -94,6 +96,11 @@ namespace mav {
 
         inline bool isFinalized() const noexcept {
             return _crc_offset >= 0;
+        }
+
+        // Depends on the incompat flags, see Header::size().
+        [[nodiscard]] inline int _payloadOffset() const noexcept {
+            return header().size();
         }
 
         inline void _unFinalize() noexcept {
@@ -114,7 +121,7 @@ namespace mav {
             >::value, "Can not set this data type to a mavlink message field.");
             // We serialize to the data type given in the field definition, not the data type used in the API.
             // This allows to use compatible data types in the API, but have them serialized to the correct data type.
-            int offset = field.offset + in_field_offset;
+            int offset = _payloadOffset() + field.offset + in_field_offset;
             uint8_t* target = _backing_memory.data() + offset;
 
             switch (field.type.base_type) {
@@ -134,7 +141,7 @@ namespace mav {
 
         template <typename T>
         inline T _readSingle(const Field &field, int in_field_offset = 0) const {
-            int data_offset = field.offset + in_field_offset;
+            int data_offset = _payloadOffset() + field.offset + in_field_offset;
             int max_size = isFinalized() ? _crc_offset - data_offset : field.type.baseSize();
             const uint8_t* b_ptr = _backing_memory.data() + data_offset;
             switch (field.type.base_type) {
@@ -153,20 +160,24 @@ namespace mav {
             return T{}; // return default value instead of throwing
         }
 
+        [[nodiscard]] inline size_t _signatureOffset() const noexcept {
+            return static_cast<size_t>(_payloadOffset() + header().len() + MessageDefinition::CHECKSUM_SIZE);
+        }
+
         // Safe signature access methods that don't throw
         std::optional<uint8_t> _getSignatureLinkId() const noexcept {
             if (!isFinalized()) {
                 return std::nullopt;
             }
-            return _backing_memory[MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE];
+            return _backing_memory[_signatureOffset()];
         }
 
         std::optional<uint64_t> _getSignatureTimestamp() const noexcept {
             if (!isFinalized()) {
                 return std::nullopt;
             }
-            const uint8_t* timestamp_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + 
-                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE];
+            const uint8_t* timestamp_ptr = &_backing_memory[
+                _signatureOffset() + MessageDefinition::SIGNATURE_LINK_ID_SIZE];
             return deserialize<uint64_t>(timestamp_ptr, MessageDefinition::SIGNATURE_TIMESTAMP_SIZE) & 0xFFFFFFFFFFFF;
         }
 
@@ -174,8 +185,9 @@ namespace mav {
             if (!isFinalized()) {
                 return std::nullopt;
             }
-            const uint8_t* signature_ptr = &_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + 
-                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE];
+            const uint8_t* signature_ptr = &_backing_memory[
+                _signatureOffset() + MessageDefinition::SIGNATURE_LINK_ID_SIZE +
+                MessageDefinition::SIGNATURE_TIMESTAMP_SIZE];
             return deserialize<uint64_t>(signature_ptr, MessageDefinition::SIGNATURE_SIGNATURE_SIZE) & 0xFFFFFFFFFFFF;
         }
 
@@ -250,18 +262,30 @@ namespace mav {
             if (!isFinalized()) {
                 return std::nullopt;
             }
-            return Signature<const uint8_t*>(&_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE]);
+            return Signature<const uint8_t*>(&_backing_memory[_signatureOffset()]);
         }
 
         [[nodiscard]] std::optional<Signature<uint8_t*>> signature() {
             if (!isFinalized()) {
                 return std::nullopt;
             }
-            return Signature<uint8_t*>(&_backing_memory[MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE]);
+            return Signature<uint8_t*>(&_backing_memory[_signatureOffset()]);
         }
 
         [[nodiscard]] const ConnectionPartner& source() const {
             return _source_partner;
+        }
+
+        // For target system IDs above 255. finalize() puts it in the extended
+        // header and sets the payload's target_system to TARGET_SYSTEM_SENTINEL.
+        void setExtendedTarget(uint32_t system_id) noexcept {
+            _unFinalize();
+            _extended_target_system_id = system_id;
+        }
+
+        // Target system from the extended header, or 0 if there is none.
+        [[nodiscard]] uint32_t extendedTargetSystemId() const noexcept {
+            return header().targetSystemId();
         }
 
         MessageResult setFromNativeTypeVariant(const std::string &field_key, const NativeVariantType &v) noexcept {
@@ -425,23 +449,23 @@ namespace mav {
             // Calculate size from MAVLink header
             const uint8_t* data_ptr = _backing_memory.data();
             uint32_t data_size = 0;
-            
+
             if (data_ptr[0] == 0xFD) { // MAVLink v2
-                data_size = data_ptr[1] + 12; // payload length + header (10) + checksum (2)
-                if (data_ptr[2] & 0x01) { // MAVLINK_IFLAG_SIGNED
-                    data_size += 13; // signature
+                data_size = static_cast<uint32_t>(header().size()) + data_ptr[1] +
+                            MessageDefinition::CHECKSUM_SIZE;
+                if (data_ptr[2] & IFLAG_SIGNED) {
+                    data_size += MessageDefinition::SIGNATURE_SIZE;
                 }
             } else if (data_ptr[0] == 0xFE) { // MAVLink v1
                 data_size = data_ptr[1] + 8; // payload length + header (6) + checksum (2)
             }
-            
+
             return data_size;
         };
 
         // Helper methods for clean payload access
         [[nodiscard]] const uint8_t* getPayloadData() const noexcept {
-            // Payload data starts after the MAVLink v2 header (10 bytes)
-            return _backing_memory.data() + MessageDefinition::HEADER_SIZE;
+            return _backing_memory.data() + _payloadOffset();
         };
 
         [[nodiscard]] uint8_t getPayloadLength() const noexcept {

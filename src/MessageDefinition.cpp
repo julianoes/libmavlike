@@ -105,7 +105,8 @@ namespace mav {
                              return a.type.baseSize() > b.type.baseSize();
                          });
 
-        int offset = MessageDefinition::HEADER_SIZE;
+        // Offsets are relative to the payload, as the header size varies.
+        int offset = 0;
         CRC crc_extra;
         crc_extra.accumulate(_result._name);
         crc_extra.accumulate(" ");
@@ -125,15 +126,16 @@ namespace mav {
         }
         _result._crc_extra = crc_extra.crc8();
 
-        _result._not_extended_payload_length = offset - MessageDefinition::HEADER_SIZE;
+        _result._not_extended_payload_length = offset;
 
         for (const auto &field : _extension_fields) {
             const auto &type = field.type;
             _result._fields.insert({field.name, {type, offset}});
             offset = offset + (type.baseSize() * type.size);
         }
-        _result._max_payload_length = offset - MessageDefinition::HEADER_SIZE;
-        _result._max_buffer_length = offset + MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_SIZE;
+        _result._max_payload_length = offset;
+        _result._max_buffer_length = MessageDefinition::MAX_HEADER_SIZE + offset +
+                                     MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_SIZE;
         return _result;
     }
 

@@ -6,6 +6,7 @@ add_executable(tests
         MessageDefinition.cpp
         MessageFieldIterator.cpp
         BufferParser.cpp
+        Sysid32.cpp
         NoExceptions.cpp)
 
 add_test(NAME tests COMMAND tests)

@@ -33,6 +33,7 @@
  ****************************************************************************/
 
 #include "mav/Message.h"
+#include <cstring>
 #include <sstream>
 #include <picosha2.h>
 
@@ -232,11 +233,12 @@ namespace mav {
         if (field.type.base_type != FieldType::BaseType::CHAR) {
             return MessageResult::TypeMismatch;
         }
+        const int data_offset = _payloadOffset() + field.offset;
         int max_string_length = isFinalized() ?
-                std::min(field.type.size, _crc_offset - field.offset) : field.type.size;
-        int real_string_length = strnlen(_backing_memory.data() + field.offset, max_string_length);
+                std::min(field.type.size, _crc_offset - data_offset) : field.type.size;
+        int real_string_length = strnlen(_backing_memory.data() + data_offset, max_string_length);
 
-        out_value = std::string{reinterpret_cast<const char*>(_backing_memory.data() + field.offset),
+        out_value = std::string{reinterpret_cast<const char*>(_backing_memory.data() + data_offset),
                            static_cast<std::string::size_type>(real_string_length)};
         return MessageResult::Success;
     }
@@ -265,57 +267,129 @@ namespace mav {
             _unFinalize();
         }
 
-        bool sign = (timestamp > 0);
+        const bool sign = (timestamp > 0);
+
+        // Payload offset of the header the message was built or parsed with.
+        const int old_payload_offset = _payloadOffset();
+
+        // MANUAL_CONTROL calls its target system field "target".
+        auto target_field_opt = _message_definition->getField("target_system");
+        if (!target_field_opt && _message_definition->name() == "MANUAL_CONTROL") {
+            target_field_opt = _message_definition->getField("target");
+        }
+
+        uint32_t target_system_id = 0;
+        if (target_field_opt) {
+            uint8_t& payload_target = _backing_memory[
+                    static_cast<size_t>(old_payload_offset + target_field_opt.value().offset)];
+            if (_extended_target_system_id > 255) {
+                target_system_id = _extended_target_system_id;
+            } else if (header().hasWideTarget() && payload_target == TARGET_SYSTEM_SENTINEL) {
+                // Keep the extended target when forwarding a parsed message.
+                target_system_id = header().targetSystemId();
+            }
+            if (target_system_id > 255) {
+                // Set before the trailing-zero trim below, so the length includes it.
+                payload_target = TARGET_SYSTEM_SENTINEL;
+            }
+        }
+        const bool wide_target = (target_system_id > 255);
+
         auto last_nonzero = std::find_if(_backing_memory.rend() -
-                MessageDefinition::HEADER_SIZE - _message_definition->maxPayloadSize(),
+                old_payload_offset - _message_definition->maxPayloadSize(),
                 _backing_memory.rend(), [](const auto &v) {
             return v != 0;
         });
 
-        int payload_size = std::max(
+        const int payload_size = std::max(
                 static_cast<int>(std::distance(last_nonzero, _backing_memory.rend()))
-                        - MessageDefinition::HEADER_SIZE, 1);
+                        - old_payload_offset, 1);
 
+        // A system ID already set on the message wins.
+        uint32_t system_id = header().systemId();
+        if (system_id == 0) {
+            system_id = static_cast<uint32_t>(sender.system_id);
+        }
+        uint8_t component_id = header().componentId();
+        if (component_id == 0) {
+            component_id = static_cast<uint8_t>(sender.component_id);
+        }
+
+        uint8_t incompat_flags = 0;
+        if (sign) {
+            incompat_flags |= IFLAG_SIGNED;
+        }
+        // Only widen when needed, so older peers can still parse us.
+        if (system_id > 255) {
+            incompat_flags |= IFLAG_SYSID32;
+        }
+        if (wide_target) {
+            incompat_flags |= IFLAG_TARGET32;
+        }
+
+        const int new_payload_offset = V2_BASE_HEADER_SIZE +
+                ((incompat_flags & IFLAG_SYSID32) ? V2_SYSID32_HEADER_EXTRA : 0) +
+                ((incompat_flags & IFLAG_TARGET32) ? V2_TARGET32_HEADER_EXTRA : 0);
+        if (new_payload_offset != old_payload_offset) {
+            std::memmove(
+                    _backing_memory.data() + new_payload_offset,
+                    _backing_memory.data() + old_payload_offset,
+                    static_cast<size_t>(payload_size));
+            if (new_payload_offset > old_payload_offset) {
+                std::fill(
+                        _backing_memory.begin() + old_payload_offset,
+                        _backing_memory.begin() + new_payload_offset, uint8_t{0});
+            } else {
+                std::fill(
+                        _backing_memory.begin() + new_payload_offset + payload_size,
+                        _backing_memory.begin() + old_payload_offset + payload_size, uint8_t{0});
+            }
+        }
+
+        // The flags determine the offsets, so they go first.
         header().magic() = 0xFD;
         header().len() = static_cast<uint8_t>(payload_size);
-        header().incompatFlags() = sign ? 0x01 : 0x00;
+        header().incompatFlags() = incompat_flags;
         header().compatFlags() = 0;
         header().seq() = seq;
-        if (header().systemId() == 0) {
-            header().systemId() = static_cast<uint8_t>(sender.system_id);
-        }
-        if (header().componentId() == 0) {
-            header().componentId() = static_cast<uint8_t>(sender.component_id);
-        }
+        header().setSystemId(system_id);
+        header().setComponentId(component_id);
         header().msgId() = _message_definition->id();
+        if (incompat_flags & IFLAG_TARGET32) {
+            header().setTargetSystemId(target_system_id);
+        }
 
         CRC crc;
         crc.accumulate(_backing_memory.begin() + 1, _backing_memory.begin() +
-            MessageDefinition::HEADER_SIZE + payload_size);
+            new_payload_offset + payload_size);
         crc.accumulate(_message_definition->crcExtra());
-        _crc_offset = MessageDefinition::HEADER_SIZE + payload_size;
+        _crc_offset = new_payload_offset + payload_size;
         serialize(crc.crc16(), _backing_memory.data() + _crc_offset);
 
         int signature_size = 0;
         if (sign) {
+            const auto signature_offset = static_cast<size_t>(_crc_offset + MessageDefinition::CHECKSUM_SIZE);
+
             // Set signature data directly without using throwing signature() accessors
-            _backing_memory[static_cast<size_t>(MessageDefinition::HEADER_SIZE + payload_size + MessageDefinition::CHECKSUM_SIZE)] = linkId;
-            
+            _backing_memory[signature_offset] = linkId;
+
             // Set timestamp
-            uint8_t* timestamp_ptr = &_backing_memory[static_cast<size_t>(MessageDefinition::HEADER_SIZE + payload_size + 
-                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE)];
+            uint8_t* timestamp_ptr = &_backing_memory[
+                signature_offset + MessageDefinition::SIGNATURE_LINK_ID_SIZE];
             serialize(timestamp & 0xFFFFFFFFFFFF, timestamp_ptr);
-            
+
             // Compute and set signature
             uint64_t computed_signature = _computeSignatureHash48(key, linkId, timestamp);
-            uint8_t* signature_ptr = &_backing_memory[static_cast<size_t>(MessageDefinition::HEADER_SIZE + payload_size + 
-                MessageDefinition::CHECKSUM_SIZE + MessageDefinition::SIGNATURE_LINK_ID_SIZE + MessageDefinition::SIGNATURE_TIMESTAMP_SIZE)];
+            uint8_t* signature_ptr = &_backing_memory[
+                signature_offset + MessageDefinition::SIGNATURE_LINK_ID_SIZE +
+                MessageDefinition::SIGNATURE_TIMESTAMP_SIZE];
             serialize(computed_signature & 0xFFFFFFFFFFFF, signature_ptr);
-            
+
             signature_size = MessageDefinition::SIGNATURE_SIZE;
         }
 
-        return MessageDefinition::HEADER_SIZE + payload_size + MessageDefinition::CHECKSUM_SIZE + signature_size;
+        return static_cast<uint32_t>(
+                new_payload_offset + payload_size + MessageDefinition::CHECKSUM_SIZE + signature_size);
     }
 
     uint64_t Message::_computeSignatureHash48(const std::array<uint8_t, MessageDefinition::KEY_SIZE>& key, 
@@ -325,8 +399,8 @@ namespace mav {
         // secret_key
         hasher.process(key.begin(), key.begin() + MessageDefinition::KEY_SIZE);
         // header + payload + CRC
-        hasher.process(_backing_memory.begin(), _backing_memory.begin() + 
-                MessageDefinition::HEADER_SIZE + header().len() + MessageDefinition::CHECKSUM_SIZE);
+        hasher.process(_backing_memory.begin(), _backing_memory.begin() +
+                _payloadOffset() + header().len() + MessageDefinition::CHECKSUM_SIZE);
         // link-ID
         hasher.process(&linkId, &linkId + MessageDefinition::SIGNATURE_LINK_ID_SIZE);
         // timestamp
