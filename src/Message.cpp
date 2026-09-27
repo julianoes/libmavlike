@@ -268,23 +268,39 @@ namespace mav {
         }
 
         const bool sign = (timestamp > 0);
-        const bool targetted = (_extended_target_system_id > 255);
 
         // The payload currently sits behind whatever header the message was
         // built or parsed with. Measure it there before deciding on the new
         // header layout.
         const int old_payload_offset = _payloadOffset();
 
-        if (targetted) {
-            // The full target lives in the extended header, so the payload's
-            // 8 bit target_system must read as 0 rather than as a truncated
-            // value aliasing some other system. Done before the trailing-zero
-            // trim below so the length reflects it.
-            auto field_opt = _message_definition->getField("target_system");
-            if (field_opt) {
-                _backing_memory[static_cast<size_t>(old_payload_offset + field_opt.value().offset)] = 0;
+        // Only messages with a target system field can carry an extended
+        // target. MANUAL_CONTROL is the one message calling it "target".
+        auto target_field_opt = _message_definition->getField("target_system");
+        if (!target_field_opt && _message_definition->name() == "MANUAL_CONTROL") {
+            target_field_opt = _message_definition->getField("target");
+        }
+
+        uint32_t target_system_id = 0;
+        if (target_field_opt) {
+            uint8_t& payload_target = _backing_memory[
+                    static_cast<size_t>(old_payload_offset + target_field_opt.value().offset)];
+            if (_extended_target_system_id > 255) {
+                target_system_id = _extended_target_system_id;
+            } else if (header().hasWideTarget() && payload_target == TARGET_SYSTEM_SENTINEL) {
+                // A received message being sent on keeps its extended target,
+                // unless the payload target has been changed since.
+                target_system_id = header().targetSystemId();
+            }
+            if (target_system_id > 255) {
+                // The full target lives in the extended header. The payload's
+                // 8 bit field gets the sentinel rather than a truncated value
+                // aliasing some other system, or 0 which would broadcast. Done
+                // before the trailing-zero trim below so the length reflects it.
+                payload_target = TARGET_SYSTEM_SENTINEL;
             }
         }
+        const bool wide_target = (target_system_id > 255);
 
         auto last_nonzero = std::find_if(_backing_memory.rend() -
                 old_payload_offset - _message_definition->maxPayloadSize(),
@@ -316,15 +332,15 @@ namespace mav {
         if (system_id > 255) {
             incompat_flags |= IFLAG_SYSID32;
         }
-        if (targetted) {
-            incompat_flags |= IFLAG_TARGETTED;
+        if (wide_target) {
+            incompat_flags |= IFLAG_TARGET32;
         }
 
         // Move the payload if the new header is a different size than the one
         // the payload was written behind.
         const int new_payload_offset = V2_BASE_HEADER_SIZE +
-                ((incompat_flags & IFLAG_SYSID32) ? 3 : 0) +
-                ((incompat_flags & IFLAG_TARGETTED) ? 5 : 0);
+                ((incompat_flags & IFLAG_SYSID32) ? V2_SYSID32_HEADER_EXTRA : 0) +
+                ((incompat_flags & IFLAG_TARGET32) ? V2_TARGET32_HEADER_EXTRA : 0);
         if (new_payload_offset != old_payload_offset) {
             std::memmove(
                     _backing_memory.data() + new_payload_offset,
@@ -348,14 +364,13 @@ namespace mav {
         header().magic() = 0xFD;
         header().len() = static_cast<uint8_t>(payload_size);
         header().incompatFlags() = incompat_flags;
-        // Advertise that we understand 32 bit system IDs.
-        header().compatFlags() = CFLAG_SYSID32;
+        header().compatFlags() = 0;
         header().seq() = seq;
         header().setSystemId(system_id);
         header().setComponentId(component_id);
         header().msgId() = _message_definition->id();
-        if (incompat_flags & IFLAG_TARGETTED) {
-            header().setTarget(_extended_target_system_id, _extended_target_component_id);
+        if (incompat_flags & IFLAG_TARGET32) {
+            header().setTargetSystemId(target_system_id);
         }
 
         CRC crc;

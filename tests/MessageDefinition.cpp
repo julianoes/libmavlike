@@ -81,10 +81,10 @@ TEST_CASE("Message set methods") {
     }
 
     SUBCASE("MAVLink specs") {
-        // 87 byte payload behind the largest possible header (18 bytes, i.e.
-        // IFLAG_SYSID32 and IFLAG_TARGETTED both set), plus checksum and
+        // 87 byte payload behind the largest possible header (17 bytes, i.e.
+        // IFLAG_SYSID32 and IFLAG_TARGET32 both set), plus checksum and
         // signature.
-        CHECK_EQ(definition.maxBufferLength(), 120);
+        CHECK_EQ(definition.maxBufferLength(), 119);
         CHECK_EQ(definition.crcExtra(), 0x59);
     }
 

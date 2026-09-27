@@ -42,11 +42,10 @@
 using namespace mav;
 
 // 32 bit system IDs (IFLAG_SYSID32) and extended header targeting
-// (IFLAG_TARGETTED).
+// (IFLAG_TARGET32).
 //
-// The golden frames below were produced by the MAVLink C implementation
-// (generator/C/include_v2.0) and are copied verbatim from
-// ArduPilot/pymavlink#1229's tests/test_sysid32.py. Wire compatibility with
+// The golden frames below are copied verbatim from pymavlink's
+// tests/test_sysid32.py, as merged in ArduPilot/pymavlink#1229. Wire compatibility with
 // every other MAVLink implementation rests on these matching byte for byte,
 // so they are the point of this file: everything else here is a round trip
 // against them.
@@ -91,21 +90,21 @@ const char command_long_xml[] = R""""(
 
 // no extended fields, targets fit in 8 bits
 const char* golden_small_small =
-    "fd210001002a0b4c00000000803f0000004000004040000080400000a0400000c0400000e0402c0107fa01190a";
-// IFLAG_TARGETTED only
+    "fd210000002a0b4c00000000803f0000004000004040000080400000a0400000c0400000e0402c0107fa01ce94";
+// IFLAG_TARGET32 only
 const char* golden_small_big =
-    "fd210401002a0b4c00000200000afa0000803f0000004000004040000080400000a0400000c0400000e0402c0100fa018ffb";
+    "fd210400002a0b4c00000200000a0000803f0000004000004040000080400000a0400000c0400000e0402c01fffa018df2";
 // IFLAG_SYSID32 only
 const char* golden_big_small =
-    "fd210201000100000a0b4c00000000803f0000004000004040000080400000a0400000c0400000e0402c0107fa01da8f";
-// IFLAG_SYSID32 | IFLAG_TARGETTED
+    "fd210200000100000a0b4c00000000803f0000004000004040000080400000a0400000c0400000e0402c0107fa019d0f";
+// IFLAG_SYSID32 | IFLAG_TARGET32
 const char* golden_big_big =
-    "fd210601000100000a0b4c00000200000afa0000803f0000004000004040000080400000a0400000c0400000e0402c0100fa0187b5";
-// IFLAG_SIGNED | IFLAG_SYSID32 | IFLAG_TARGETTED, key bytes([42]*32),
+    "fd210600000100000a0b4c00000200000a0000803f0000004000004040000080400000a0400000c0400000e0402c01fffa0140e5";
+// IFLAG_SIGNED | IFLAG_SYSID32 | IFLAG_TARGET32, key bytes([42]*32),
 // link id 3, timestamp 1000
 const char* golden_signed =
-    "fd210701000100000a0b4c00000200000afa0000803f0000004000004040000080400000a0"
-    "400000c0400000e0402c0100fa01d22103e80300000000b7ef98e9a4c8";
+    "fd210700000100000a0b4c00000200000a0000803f0000004000004040000080400000a0"
+    "400000c0400000e0402c01fffa01d03903e80300000000349dea1b799d";
 
 std::vector<uint8_t> fromHex(const std::string& hex) {
     std::vector<uint8_t> out;
@@ -151,7 +150,7 @@ Message makeCommandLong(MessageSet& message_set, uint32_t target) {
     // Targets above 255 do not fit the payload field and travel in the
     // extended header instead.
     if (target > 255) {
-        message.setExtendedTarget(target, target_component);
+        message.setExtendedTarget(target);
     } else {
         message.set("target_system", static_cast<uint8_t>(target));
     }
@@ -229,18 +228,23 @@ TEST_CASE("32 bit system IDs parse from the C implementation's bytes") {
         auto& message = message_opt.value();
 
         CHECK_EQ(consumed, frame.size());
-        CHECK_EQ(message.header().incompatFlags(), IFLAG_TARGETTED);
-        CHECK_EQ(message.header().size(), 15);
+        CHECK_EQ(message.header().incompatFlags(), IFLAG_TARGET32);
+        CHECK_EQ(message.header().size(), 14);
         CHECK_EQ(message.header().systemId(), sysid_small);
         CHECK_EQ(message.header().componentId(), compid);
         CHECK_EQ(message.extendedTargetSystemId(), target_big);
-        CHECK_EQ(message.extendedTargetComponentId(), target_component);
 
-        // The payload target_system reads as 0 when the real target is in the
-        // header. Callers must consult extendedTargetSystemId() first.
+        // The payload target_system reads as the sentinel when the real target
+        // is in the header. Callers must consult extendedTargetSystemId() first.
         uint8_t payload_target = 0;
         CHECK_EQ(message.get("target_system", payload_target), MessageResult::Success);
-        CHECK_EQ(payload_target, 0);
+        CHECK_EQ(payload_target, TARGET_SYSTEM_SENTINEL);
+
+        // The target component is not part of the extended header.
+        uint8_t payload_target_component = 0;
+        CHECK_EQ(
+            message.get("target_component", payload_target_component), MessageResult::Success);
+        CHECK_EQ(payload_target_component, target_component);
     }
 
     SUBCASE("32 bit sysid, 8 bit target") {
@@ -270,12 +274,11 @@ TEST_CASE("32 bit system IDs parse from the C implementation's bytes") {
         auto& message = message_opt.value();
 
         CHECK_EQ(consumed, frame.size());
-        CHECK_EQ(message.header().incompatFlags(), IFLAG_SYSID32 | IFLAG_TARGETTED);
-        CHECK_EQ(message.header().size(), 18);
+        CHECK_EQ(message.header().incompatFlags(), IFLAG_SYSID32 | IFLAG_TARGET32);
+        CHECK_EQ(message.header().size(), 17);
         CHECK_EQ(message.header().systemId(), sysid_big);
         CHECK_EQ(message.header().componentId(), compid);
         CHECK_EQ(message.extendedTargetSystemId(), target_big);
-        CHECK_EQ(message.extendedTargetComponentId(), target_component);
     }
 
     SUBCASE("payload survives the widest header") {
@@ -285,7 +288,7 @@ TEST_CASE("32 bit system IDs parse from the C implementation's bytes") {
         REQUIRE(message_opt.has_value());
         auto& message = message_opt.value();
 
-        // Field offsets are payload relative, so an 18 byte header must not
+        // Field offsets are payload relative, so a 17 byte header must not
         // shift what the fields read.
         uint16_t read_command = 0;
         CHECK_EQ(message.get("command", read_command), MessageResult::Success);
@@ -368,8 +371,8 @@ TEST_CASE("An incomplete extended header waits for more data") {
 
     const auto frame = fromHex(golden_big_big);
 
-    // Anything shorter than the full 18 byte header cannot be sized yet.
-    for (size_t len = 1; len < 18; len++) {
+    // Anything shorter than the full 17 byte header cannot be sized yet.
+    for (size_t len = 1; len < 17; len++) {
         CAPTURE(len);
         size_t consumed = 0;
         auto message_opt = parser.parseMessage(frame.data(), len, consumed);
@@ -400,4 +403,39 @@ TEST_CASE("8 bit senders are unaffected") {
     auto parsed = parser.parseMessage(message.data(), size_opt.value(), consumed);
     REQUIRE(parsed.has_value());
     CHECK_EQ(parsed.value().header().systemId(), 255);
+}
+
+TEST_CASE("A received extended target survives being sent on") {
+    auto message_set = makeMessageSet();
+    BufferParser parser{message_set};
+
+    const auto frame = fromHex(golden_small_big);
+    size_t consumed = 0;
+    auto message_opt = parser.parseMessage(frame.data(), frame.size(), consumed);
+    REQUIRE(message_opt.has_value());
+    auto message = message_opt.value();
+
+    // Re-finalizing, e.g. when forwarding, must not turn the sentinel in the
+    // payload into a target of system 255.
+    auto size_opt = message.finalize(0, Identifier{sysid_small, compid});
+    REQUIRE(size_opt.has_value());
+    CHECK_EQ(toHex(message.data(), size_opt.value()), std::string{golden_small_big});
+    CHECK_EQ(message.extendedTargetSystemId(), target_big);
+}
+
+TEST_CASE("Retargeting a received message to an 8 bit system drops the extended target") {
+    auto message_set = makeMessageSet();
+    BufferParser parser{message_set};
+
+    const auto frame = fromHex(golden_small_big);
+    size_t consumed = 0;
+    auto message_opt = parser.parseMessage(frame.data(), frame.size(), consumed);
+    REQUIRE(message_opt.has_value());
+    auto message = message_opt.value();
+
+    CHECK_EQ(message.set("target_system", static_cast<uint8_t>(target_small)), MessageResult::Success);
+    auto size_opt = message.finalize(0, Identifier{sysid_small, compid});
+    REQUIRE(size_opt.has_value());
+    CHECK_EQ(toHex(message.data(), size_opt.value()), std::string{golden_small_small});
+    CHECK_EQ(message.extendedTargetSystemId(), 0);
 }

@@ -84,7 +84,6 @@ namespace mav {
         // header by finalize(). Only used when the target system ID does not
         // fit in the payload's 8 bit target_system field.
         uint32_t _extended_target_system_id{0};
-        uint8_t _extended_target_component_id{0};
 
         explicit Message(const MessageDefinition &message_definition) :
             _message_definition(&message_definition) {
@@ -282,24 +281,21 @@ namespace mav {
         }
 
         // Address this message at a system whose ID does not fit in 8 bits.
-        // finalize() then sets IFLAG_TARGETTED and writes the target into the
-        // extended header instead of the payload. For targets up to 255 keep
-        // using the regular target_system / target_component payload fields.
-        void setExtendedTarget(uint32_t system_id, uint8_t component_id) noexcept {
+        // finalize() then sets IFLAG_TARGET32, writes the target into the
+        // extended header and sets the payload's target system field to
+        // TARGET_SYSTEM_SENTINEL. For targets up to 255 keep using the regular
+        // target_system payload field. The target component always stays in
+        // the payload.
+        void setExtendedTarget(uint32_t system_id) noexcept {
             _unFinalize();
             _extended_target_system_id = system_id;
-            _extended_target_component_id = component_id;
         }
 
         // Target system of this message as carried in the extended header, or
         // 0 if the message does not use one. The payload's target_system field
-        // is unaffected and read via get("target_system", ...) as usual.
+        // then reads TARGET_SYSTEM_SENTINEL.
         [[nodiscard]] uint32_t extendedTargetSystemId() const noexcept {
             return header().targetSystemId();
-        }
-
-        [[nodiscard]] uint8_t extendedTargetComponentId() const noexcept {
-            return header().targetComponentId();
         }
 
         MessageResult setFromNativeTypeVariant(const std::string &field_key, const NativeVariantType &v) noexcept {
