@@ -87,8 +87,7 @@ namespace mav {
         size_t start_pos,
         size_t& bytes_consumed) const noexcept {
 
-        // The header length depends on the incompat flags, so we need those
-        // three bytes before we know how much of a header to expect.
+        // The header size depends on the incompat flags.
         if (start_pos + 3 > buffer_size) {
             bytes_consumed = start_pos; // Consumed bytes before magic, not including it
             return std::nullopt;
@@ -96,9 +95,7 @@ namespace mav {
 
         const uint8_t incompat_flags = buffer[start_pos + 2];
 
-        // An unknown incompat flag means we cannot know where the payload
-        // starts, so the frame is unparsable rather than merely unknown.
-        // Drop the magic byte and resync rather than trusting a bad length.
+        // Unknown incompat flag, skip the magic byte and resync.
         if (incompat_flags & ~IFLAG_ALL_KNOWN) {
             bytes_consumed = start_pos + 1;
             return std::nullopt;

@@ -269,13 +269,10 @@ namespace mav {
 
         const bool sign = (timestamp > 0);
 
-        // The payload currently sits behind whatever header the message was
-        // built or parsed with. Measure it there before deciding on the new
-        // header layout.
+        // Payload offset of the header the message was built or parsed with.
         const int old_payload_offset = _payloadOffset();
 
-        // Only messages with a target system field can carry an extended
-        // target. MANUAL_CONTROL is the one message calling it "target".
+        // MANUAL_CONTROL calls its target system field "target".
         auto target_field_opt = _message_definition->getField("target_system");
         if (!target_field_opt && _message_definition->name() == "MANUAL_CONTROL") {
             target_field_opt = _message_definition->getField("target");
@@ -288,15 +285,11 @@ namespace mav {
             if (_extended_target_system_id > 255) {
                 target_system_id = _extended_target_system_id;
             } else if (header().hasWideTarget() && payload_target == TARGET_SYSTEM_SENTINEL) {
-                // A received message being sent on keeps its extended target,
-                // unless the payload target has been changed since.
+                // Keep the extended target when forwarding a parsed message.
                 target_system_id = header().targetSystemId();
             }
             if (target_system_id > 255) {
-                // The full target lives in the extended header. The payload's
-                // 8 bit field gets the sentinel rather than a truncated value
-                // aliasing some other system, or 0 which would broadcast. Done
-                // before the trailing-zero trim below so the length reflects it.
+                // Set before the trailing-zero trim below, so the length includes it.
                 payload_target = TARGET_SYSTEM_SENTINEL;
             }
         }
@@ -312,8 +305,7 @@ namespace mav {
                 static_cast<int>(std::distance(last_nonzero, _backing_memory.rend()))
                         - old_payload_offset, 1);
 
-        // A system ID that was already set on the message wins over the one
-        // passed in, matching the previous behaviour.
+        // A system ID already set on the message wins.
         uint32_t system_id = header().systemId();
         if (system_id == 0) {
             system_id = static_cast<uint32_t>(sender.system_id);
@@ -327,8 +319,7 @@ namespace mav {
         if (sign) {
             incompat_flags |= IFLAG_SIGNED;
         }
-        // Only widen when the value actually needs it, so peers that do not
-        // understand the flags keep receiving parsable frames.
+        // Only widen when needed, so older peers can still parse us.
         if (system_id > 255) {
             incompat_flags |= IFLAG_SYSID32;
         }
@@ -336,8 +327,6 @@ namespace mav {
             incompat_flags |= IFLAG_TARGET32;
         }
 
-        // Move the payload if the new header is a different size than the one
-        // the payload was written behind.
         const int new_payload_offset = V2_BASE_HEADER_SIZE +
                 ((incompat_flags & IFLAG_SYSID32) ? V2_SYSID32_HEADER_EXTRA : 0) +
                 ((incompat_flags & IFLAG_TARGET32) ? V2_TARGET32_HEADER_EXTRA : 0);
@@ -347,20 +336,17 @@ namespace mav {
                     _backing_memory.data() + old_payload_offset,
                     static_cast<size_t>(payload_size));
             if (new_payload_offset > old_payload_offset) {
-                // Clear the gap the payload moved out of, which is now header.
                 std::fill(
                         _backing_memory.begin() + old_payload_offset,
                         _backing_memory.begin() + new_payload_offset, uint8_t{0});
             } else {
-                // Clear what the payload moved away from at the tail.
                 std::fill(
                         _backing_memory.begin() + new_payload_offset + payload_size,
                         _backing_memory.begin() + old_payload_offset + payload_size, uint8_t{0});
             }
         }
 
-        // Order matters: the flags decide where every field from the system ID
-        // onwards lives, so they have to be written first.
+        // The flags determine the offsets, so they go first.
         header().magic() = 0xFD;
         header().len() = static_cast<uint8_t>(payload_size);
         header().incompatFlags() = incompat_flags;

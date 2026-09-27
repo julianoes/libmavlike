@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (c) 2023, libmav development team
+ * Copyright (c) 2026, libmavlike development team
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,18 +41,9 @@
 
 using namespace mav;
 
-// 32 bit system IDs (IFLAG_SYSID32) and extended header targeting
-// (IFLAG_TARGET32).
-//
-// The golden frames below are copied verbatim from pymavlink's
-// tests/test_sysid32.py, as merged in ArduPilot/pymavlink#1229. Wire compatibility with
-// every other MAVLink implementation rests on these matching byte for byte,
-// so they are the point of this file: everything else here is a round trip
-// against them.
-//
-// All frames are COMMAND_LONG packed from
-// (sysid, compid=11, target, target_component=250, command=300,
-//  confirmation=1, param1..param7 = 1.0 .. 7.0) at seq 0.
+// Golden frames from pymavlink's tests/test_sysid32.py (ArduPilot/pymavlink#1229).
+// COMMAND_LONG (sysid, compid=11, target, target_component=250, command=300,
+// confirmation=1, param1..param7 = 1.0 .. 7.0) at seq 0.
 
 namespace {
 
@@ -141,14 +132,11 @@ MessageSet makeMessageSet() {
     return message_set;
 }
 
-// Build the COMMAND_LONG used for all golden frames, minus the finalize step.
 Message makeCommandLong(MessageSet& message_set, uint32_t target) {
     auto message_opt = message_set.create("COMMAND_LONG");
     REQUIRE(message_opt.has_value());
     auto message = message_opt.value();
 
-    // Targets above 255 do not fit the payload field and travel in the
-    // extended header instead.
     if (target > 255) {
         message.setExtendedTarget(target);
     } else {
@@ -213,7 +201,6 @@ TEST_CASE("32 bit system IDs parse from the C implementation's bytes") {
         CHECK_EQ(message.header().systemId(), sysid_small);
         CHECK_EQ(message.header().componentId(), compid);
 
-        // No extended header, so the target is in the payload as usual.
         CHECK_EQ(message.extendedTargetSystemId(), 0);
         uint8_t payload_target = 0;
         CHECK_EQ(message.get("target_system", payload_target), MessageResult::Success);
@@ -234,13 +221,10 @@ TEST_CASE("32 bit system IDs parse from the C implementation's bytes") {
         CHECK_EQ(message.header().componentId(), compid);
         CHECK_EQ(message.extendedTargetSystemId(), target_big);
 
-        // The payload target_system reads as the sentinel when the real target
-        // is in the header. Callers must consult extendedTargetSystemId() first.
         uint8_t payload_target = 0;
         CHECK_EQ(message.get("target_system", payload_target), MessageResult::Success);
         CHECK_EQ(payload_target, TARGET_SYSTEM_SENTINEL);
 
-        // The target component is not part of the extended header.
         uint8_t payload_target_component = 0;
         CHECK_EQ(
             message.get("target_component", payload_target_component), MessageResult::Success);
@@ -288,8 +272,6 @@ TEST_CASE("32 bit system IDs parse from the C implementation's bytes") {
         REQUIRE(message_opt.has_value());
         auto& message = message_opt.value();
 
-        // Field offsets are payload relative, so a 17 byte header must not
-        // shift what the fields read.
         uint16_t read_command = 0;
         CHECK_EQ(message.get("command", read_command), MessageResult::Success);
         CHECK_EQ(read_command, command);
@@ -320,7 +302,6 @@ TEST_CASE("Signed frames with extended headers match the C implementation") {
     REQUIRE(size_opt.has_value());
     CHECK_EQ(toHex(message.data(), size_opt.value()), std::string{golden_signed});
 
-    // The hash covers the extended header, so validation has to agree.
     auto valid_opt = message.validate(key);
     REQUIRE(valid_opt.has_value());
     CHECK(valid_opt.value());
@@ -331,14 +312,13 @@ TEST_CASE("Unknown incompat flags are rejected rather than mis-parsed") {
     BufferParser parser{message_set};
 
     auto frame = fromHex(golden_small_small);
-    // 0x08 is not a flag we know, so we cannot tell where the payload starts.
+    // Unknown incompat flag
     frame[2] = 0x08;
 
     size_t consumed = 0;
     auto message_opt = parser.parseMessage(frame.data(), frame.size(), consumed);
     CHECK(!message_opt.has_value());
-    // Only the magic byte is dropped, so a real frame starting later in the
-    // buffer is still found on the next pass.
+    // Only the magic byte is dropped.
     CHECK_EQ(consumed, 1);
 }
 
@@ -371,7 +351,6 @@ TEST_CASE("An incomplete extended header waits for more data") {
 
     const auto frame = fromHex(golden_big_big);
 
-    // Anything shorter than the full 17 byte header cannot be sized yet.
     for (size_t len = 1; len < 17; len++) {
         CAPTURE(len);
         size_t consumed = 0;
@@ -380,7 +359,6 @@ TEST_CASE("An incomplete extended header waits for more data") {
         CHECK_EQ(consumed, 0);
     }
 
-    // Nor can a complete header with a partial payload.
     size_t consumed = 0;
     auto message_opt = parser.parseMessage(frame.data(), frame.size() - 1, consumed);
     CHECK(!message_opt.has_value());
@@ -391,8 +369,6 @@ TEST_CASE("8 bit senders are unaffected") {
     auto message_set = makeMessageSet();
     BufferParser parser{message_set};
 
-    // A system ID that fits in 8 bits must not set IFLAG_SYSID32, otherwise
-    // peers that predate this feature stop being able to parse us at all.
     auto message = makeCommandLong(message_set, target_small);
     auto size_opt = message.finalize(0, Identifier{255, compid});
     REQUIRE(size_opt.has_value());
@@ -415,8 +391,6 @@ TEST_CASE("A received extended target survives being sent on") {
     REQUIRE(message_opt.has_value());
     auto message = message_opt.value();
 
-    // Re-finalizing, e.g. when forwarding, must not turn the sentinel in the
-    // payload into a target of system 255.
     auto size_opt = message.finalize(0, Identifier{sysid_small, compid});
     REQUIRE(size_opt.has_value());
     CHECK_EQ(toHex(message.data(), size_opt.value()), std::string{golden_small_big});

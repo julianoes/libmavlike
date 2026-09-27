@@ -105,9 +105,7 @@ namespace mav {
                              return a.type.baseSize() > b.type.baseSize();
                          });
 
-        // Field offsets are relative to the start of the payload. The header
-        // they sit behind varies in size (see Header::size()), so the payload
-        // offset is added at access time rather than baked in here.
+        // Offsets are relative to the payload, as the header size varies.
         int offset = 0;
         CRC crc_extra;
         crc_extra.accumulate(_result._name);

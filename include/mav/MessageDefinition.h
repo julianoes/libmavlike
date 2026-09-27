@@ -119,33 +119,27 @@ namespace mav {
     };
 
 
-    // MAVLink 2 incompat_flags. A receiver that does not understand one of
-    // these cannot parse the frame at all, hence "incompatible".
+    // MAVLink 2 incompat_flags
     constexpr uint8_t IFLAG_SIGNED = 0x01;
-    // Sender system ID occupies 4 bytes in the header instead of 1.
+    // 4 byte sender system ID
     constexpr uint8_t IFLAG_SYSID32 = 0x02;
-    // A 4-byte target system ID is appended to the header. The target
-    // component stays in the payload.
+    // 4 byte target system ID appended to the header
     constexpr uint8_t IFLAG_TARGET32 = 0x04;
     constexpr uint8_t IFLAG_ALL_KNOWN = IFLAG_SIGNED | IFLAG_SYSID32 | IFLAG_TARGET32;
 
-    // MAVLink 2 header size including the magic byte: 10 bytes with no
-    // extended fields, up to 17 with both IFLAG_SYSID32 and IFLAG_TARGET32.
+    // Including the magic byte
     constexpr int V2_BASE_HEADER_SIZE = 10;
     constexpr int V2_SYSID32_HEADER_EXTRA = 3;
     constexpr int V2_TARGET32_HEADER_EXTRA = 4;
     constexpr int V2_MAX_HEADER_SIZE =
             V2_BASE_HEADER_SIZE + V2_SYSID32_HEADER_EXTRA + V2_TARGET32_HEADER_EXTRA;
 
-    // With IFLAG_TARGET32 the payload's 8 bit target system field is set to
-    // this, so it does not read as a broadcast. 255 is still a valid system
-    // ID and not reserved, so never route on the payload field alone.
+    // Payload target_system with IFLAG_TARGET32. 255 is still a valid system ID.
     constexpr uint8_t TARGET_SYSTEM_SENTINEL = 255;
 
     class Identifier {
     public:
-        // Wide enough to hold the full 32 bit system ID range as well as
-        // ANY_ID (-1).
+        // 32 bit system IDs plus ANY_ID (-1)
         const int64_t system_id;
         const int64_t component_id;
 
@@ -176,8 +170,7 @@ namespace mav {
             explicit _MsgId(BackingMemoryPointerType ptr) : _ptr(ptr) {}
 
             operator int() const {
-                // Assembled byte-wise: the message ID is not aligned in the
-                // header, and its offset moves with IFLAG_SYSID32.
+                // Not aligned, and the offset moves with IFLAG_SYSID32.
                 return static_cast<int>(
                         static_cast<uint32_t>(_ptr[0]) |
                         (static_cast<uint32_t>(_ptr[1]) << 8) |
@@ -247,13 +240,11 @@ namespace mav {
             return (incompatFlags() & IFLAG_TARGET32) != 0;
         }
 
-        // Number of bytes the sender system ID occupies at offset 5.
         [[nodiscard]] inline int systemIdSize() const {
             return hasWideSystemId() ? 4 : 1;
         }
 
-        // Total header size including the magic byte. Between 10 and 17 bytes
-        // depending on the incompat flags.
+        // Including the magic byte
         [[nodiscard]] inline int size() const {
             return V2_BASE_HEADER_SIZE + (hasWideSystemId() ? V2_SYSID32_HEADER_EXTRA : 0) +
                    (hasWideTarget() ? V2_TARGET32_HEADER_EXTRA : 0);
@@ -269,9 +260,7 @@ namespace mav {
                    (static_cast<uint32_t>(_backing_memory[8]) << 24);
         }
 
-        // Writes the system ID at its current width. The IFLAG_SYSID32 flag
-        // must already reflect the intended width, since every field after
-        // the system ID shifts with it.
+        // Requires IFLAG_SYSID32 to already be set as needed.
         inline void setSystemId(uint32_t v) {
             _backing_memory[5] = static_cast<uint8_t>(v & 0xFF);
             if (hasWideSystemId()) {
@@ -297,7 +286,6 @@ namespace mav {
             return _MsgId(_backing_memory + 6 + systemIdSize());
         }
 
-        // Extended target, only meaningful when IFLAG_TARGET32 is set.
         [[nodiscard]] inline uint32_t targetSystemId() const {
             if (!hasWideTarget()) {
                 return 0;
@@ -309,7 +297,7 @@ namespace mav {
                    (static_cast<uint32_t>(_backing_memory[ofs + 3]) << 24);
         }
 
-        // Requires IFLAG_TARGET32 to already be set, see setSystemId().
+        // Requires IFLAG_TARGET32 to already be set.
         inline void setTargetSystemId(uint32_t system_id) {
             const auto ofs = 9 + systemIdSize();
             _backing_memory[ofs] = static_cast<uint8_t>(system_id & 0xFF);
@@ -431,8 +419,7 @@ namespace mav {
 
     public:
         static constexpr int MAX_PAYLOAD_SIZE = 255;
-        // Smallest MAVLink 2 header, i.e. no IFLAG_SYSID32 and no
-        // IFLAG_TARGET32. Use Header::size() for the actual size of a frame.
+        // Without extensions, see Header::size().
         static constexpr int HEADER_SIZE = V2_BASE_HEADER_SIZE;
         static constexpr int MAX_HEADER_SIZE = V2_MAX_HEADER_SIZE;
         static constexpr int CHECKSUM_SIZE = 2;

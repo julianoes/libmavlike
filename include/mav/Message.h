@@ -80,9 +80,7 @@ namespace mav {
         std::array<uint8_t, MessageDefinition::MAX_MESSAGE_SIZE> _backing_memory{};
         const MessageDefinition* _message_definition{nullptr};
         int _crc_offset{-1};
-        // Extended target requested via setExtendedTarget(), applied to the
-        // header by finalize(). Only used when the target system ID does not
-        // fit in the payload's 8 bit target_system field.
+        // Set via setExtendedTarget(), applied by finalize().
         uint32_t _extended_target_system_id{0};
 
         explicit Message(const MessageDefinition &message_definition) :
@@ -100,8 +98,7 @@ namespace mav {
             return _crc_offset >= 0;
         }
 
-        // Offset of the payload within the backing memory. Varies with the
-        // incompat flags, see Header::size().
+        // Depends on the incompat flags, see Header::size().
         [[nodiscard]] inline int _payloadOffset() const noexcept {
             return header().size();
         }
@@ -163,7 +160,6 @@ namespace mav {
             return T{}; // return default value instead of throwing
         }
 
-        // Offset of the signature block, i.e. just past the checksum.
         [[nodiscard]] inline size_t _signatureOffset() const noexcept {
             return static_cast<size_t>(_payloadOffset() + header().len() + MessageDefinition::CHECKSUM_SIZE);
         }
@@ -280,20 +276,14 @@ namespace mav {
             return _source_partner;
         }
 
-        // Address this message at a system whose ID does not fit in 8 bits.
-        // finalize() then sets IFLAG_TARGET32, writes the target into the
-        // extended header and sets the payload's target system field to
-        // TARGET_SYSTEM_SENTINEL. For targets up to 255 keep using the regular
-        // target_system payload field. The target component always stays in
-        // the payload.
+        // For target system IDs above 255. finalize() puts it in the extended
+        // header and sets the payload's target_system to TARGET_SYSTEM_SENTINEL.
         void setExtendedTarget(uint32_t system_id) noexcept {
             _unFinalize();
             _extended_target_system_id = system_id;
         }
 
-        // Target system of this message as carried in the extended header, or
-        // 0 if the message does not use one. The payload's target_system field
-        // then reads TARGET_SYSTEM_SENTINEL.
+        // Target system from the extended header, or 0 if there is none.
         [[nodiscard]] uint32_t extendedTargetSystemId() const noexcept {
             return header().targetSystemId();
         }
@@ -461,7 +451,6 @@ namespace mav {
             uint32_t data_size = 0;
 
             if (data_ptr[0] == 0xFD) { // MAVLink v2
-                // Header size varies with the incompat flags.
                 data_size = static_cast<uint32_t>(header().size()) + data_ptr[1] +
                             MessageDefinition::CHECKSUM_SIZE;
                 if (data_ptr[2] & IFLAG_SIGNED) {
